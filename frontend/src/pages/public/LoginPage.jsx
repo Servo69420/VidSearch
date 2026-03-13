@@ -28,7 +28,7 @@ export default function LoginPage() {
         <div className="auth-header">
           <a href="#/" className="auth-logo">
             <div className="auth-logo-icon">&#9654;</div>
-            VidSearch
+            VideoSearch
           </a>
           <h3>Welcome back</h3>
           <p>Sign in to your account to continue learning.</p>

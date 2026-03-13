@@ -68,14 +68,14 @@ export default function ContactPage() {
                   <span className="contact-info-icon">&#9993;</span>
                   <div>
                     <div className="contact-info-label">Email</div>
-                    <div className="contact-info-value">support@vidsearch.com</div>
+                    <div className="contact-info-value">support@videosearch.com</div>
                   </div>
                 </div>
                 <div className="contact-info-item">
                   <span className="contact-info-icon">&#128205;</span>
                   <div>
                     <div className="contact-info-label">Location</div>
-                    <div className="contact-info-value">San Francisco, CA</div>
+                    <div className="contact-info-value">Vilnius, Lithuania</div>
                   </div>
                 </div>
                 <div className="contact-info-item">

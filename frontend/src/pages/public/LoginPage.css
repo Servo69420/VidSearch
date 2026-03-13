@@ -9,12 +9,13 @@
 
 .auth-card {
   width: 100%;
-  max-width: 420px;
+  max-width: 480px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-lg);
   padding: 40px;
+  overflow: hidden;
 }
 
 .auth-header {
@@ -116,7 +117,11 @@
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: var(--space-md);
+  min-width: 0;
 }
+
+.auth-row .auth-field { min-width: 0; }
+.auth-row .auth-field input { min-width: 0; width: 100%; }
 
 .auth-interests-label {
   font-size: var(--text-sm);

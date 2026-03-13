@@ -36,7 +36,7 @@ export default function Footer() {
           <div className="footer-brand">
             <div className="footer-logo">
               <div className="footer-logo-icon">&#9654;</div>
-              <span>VidSearch</span>
+              <span>VideoSearch</span>
             </div>
             <p className="footer-tagline">AI-powered video learning platform. Understand any video instantly.</p>
             <div className="footer-social">
@@ -56,7 +56,7 @@ export default function Footer() {
           ))}
         </div>
         <div className="footer-bottom">
-          <span>&copy; 2026 VidSearch. All rights reserved.</span>
+          <span>&copy; 2026 VideoSearch. All rights reserved.</span>
           <span>Made with learning in mind.</span>
         </div>
       </div>

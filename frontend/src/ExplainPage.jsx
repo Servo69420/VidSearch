@@ -119,7 +119,7 @@ export default function ExplainPage() {
           <div className="chat-header-left">
             <div className="chat-avatar">AI</div>
             <div>
-              <div className="chat-name">VidSearch Explainer</div>
+              <div className="chat-name">VideoSearch Explainer</div>
               <div className="chat-status">
                 <span className="status-dot" />
                 LLM API — not connected yet

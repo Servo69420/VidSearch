@@ -1,4 +1,4 @@
-.watched-page { max-width: 1000px; }
+.watched-page { max-width: 1000px; margin: 0 auto; padding: var(--space-xl) var(--space-lg); }
 
 .watched-header { margin-bottom: var(--space-lg); }
 .watched-header h3 { margin-bottom: 4px; }

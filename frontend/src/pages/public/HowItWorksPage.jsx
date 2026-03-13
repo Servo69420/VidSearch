@@ -9,7 +9,7 @@ export default function HowItWorksPage() {
           <div className="section-header">
             <div className="hiw-badge">How It Works</div>
             <h1>From Video to Understanding<br />in Seconds</h1>
-            <p>VidSearch uses AI to transform any YouTube video into an interactive learning experience.</p>
+            <p>VideoSearch uses AI to transform any YouTube video into an interactive learning experience.</p>
           </div>
         </div>
       </section>

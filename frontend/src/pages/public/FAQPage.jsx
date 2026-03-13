@@ -9,7 +9,7 @@ export default function FAQPage() {
         <div className="container">
           <div className="section-header">
             <h1>Frequently Asked Questions</h1>
-            <p>Everything you need to know about VidSearch.</p>
+            <p>Everything you need to know about VideoSearch.</p>
           </div>
         </div>
       </section>

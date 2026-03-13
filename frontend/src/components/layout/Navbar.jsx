@@ -47,7 +47,7 @@ export default function Navbar() {
       <div className="navbar-inner">
         <a href="#/" className="navbar-logo">
           <div className="navbar-logo-icon">&#9654;</div>
-          <span>VidSearch</span>
+          <span>VideoSearch</span>
         </a>
 
         <div className={`navbar-links ${menuOpen ? 'open' : ''}`}>

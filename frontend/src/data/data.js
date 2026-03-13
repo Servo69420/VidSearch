@@ -87,11 +87,11 @@ export const PRICING_PLANS = [
 ]
 
 export const FAQ_ITEMS = [
-  { question: 'What is VidSearch?', answer: 'VidSearch is an AI-powered video learning platform that helps you understand any YouTube video through interactive Q&A. Paste a video link, and our AI will analyze the content so you can ask questions, get explanations, and save key insights.' },
+  { question: 'What is VideoSearch?', answer: 'VideoSearch is an AI-powered video learning platform that helps you understand any YouTube video through interactive Q&A. Paste a video link, and our AI will analyze the content so you can ask questions, get explanations, and save key insights.' },
   { question: 'How does the AI explanation work?', answer: 'Our AI processes the video transcript and visual content to build a deep understanding of the material. You can then ask questions in natural language, and the AI provides accurate, context-aware answers referencing specific parts of the video.' },
   { question: 'Is there a free plan?', answer: 'Yes! Our Free plan gives you 5 video explanations per month with basic Q&A capabilities. No credit card required to get started.' },
   { question: 'Can I cancel my subscription anytime?', answer: 'Absolutely. You can cancel your Pro or Premium subscription at any time from your account settings. You will retain access until the end of your current billing period.' },
-  { question: 'What types of videos are supported?', answer: 'VidSearch works with any public YouTube video. Whether it is a lecture, tutorial, documentary, or educational content, our AI can process and explain it.' },
+  { question: 'What types of videos are supported?', answer: 'VideoSearch works with any public YouTube video. Whether it is a lecture, tutorial, documentary, or educational content, our AI can process and explain it.' },
   { question: 'How do saved clips work?', answer: 'While watching a video, you can bookmark specific timestamps and add notes. These saved clips are organized in your library for easy review and can be exported or shared.' },
   { question: 'Is my data secure?', answer: 'Yes. We use industry-standard encryption for all data in transit and at rest. We never share your personal information or viewing history with third parties.' },
   { question: 'Do you offer refunds?', answer: 'We offer a full refund within the first 7 days of any paid subscription. After that, you can cancel at any time but refunds are not available for partial billing periods.' },
@@ -107,15 +107,15 @@ export const FEATURES = [
 ]
 
 export const HOW_IT_WORKS_STEPS = [
-  { step: 1, title: 'Paste a Video Link', description: 'Copy any YouTube video URL and paste it into the VidSearch workspace. Our AI begins processing the video immediately.' },
+  { step: 1, title: 'Paste a Video Link', description: 'Copy any YouTube video URL and paste it into the VideoSearch workspace. Our AI begins processing the video immediately.' },
   { step: 2, title: 'Ask Questions', description: 'Type any question about the video content. The AI understands context, nuance, and can reference specific timestamps.' },
   { step: 3, title: 'Get Instant Answers', description: 'Receive detailed, accurate explanations with references to the exact moments in the video. Save insights for later.' },
   { step: 4, title: 'Build Your Knowledge', description: 'Track your progress, revisit saved clips, and build a personal library of video-based learning materials.' },
 ]
 
 export const TESTIMONIALS = [
-  { name: 'Sarah Chen', role: 'Computer Science Student', quote: 'VidSearch completely changed how I study. I can watch a lecture and instantly get clarification on anything I missed.', avatar: 'SC' },
-  { name: 'James Rodriguez', role: 'High School Teacher', quote: 'I use VidSearch to prepare lesson materials. The AI explanations help me find the best teaching moments in educational videos.', avatar: 'JR' },
+  { name: 'Sarah Chen', role: 'Computer Science Student', quote: 'VideoSearch completely changed how I study. I can watch a lecture and instantly get clarification on anything I missed.', avatar: 'SC' },
+  { name: 'James Rodriguez', role: 'High School Teacher', quote: 'I use VideoSearch to prepare lesson materials. The AI explanations help me find the best teaching moments in educational videos.', avatar: 'JR' },
   { name: 'Emily Park', role: 'Self-Learner', quote: 'As someone who learns best from videos, this tool is a game-changer. The saved clips feature is incredibly useful for review.', avatar: 'EP' },
 ]
 

@@ -38,11 +38,11 @@ export default function SignUpPage() {
 
   return (
     <div className="auth-page">
-      <div className="auth-card" style={{ maxWidth: 480 }}>
+      <div className="auth-card">
         <div className="auth-header">
           <a href="#/" className="auth-logo">
             <div className="auth-logo-icon">&#9654;</div>
-            VidSearch
+            VideoSearch
           </a>
           <h3>Create your account</h3>
           <p>Start learning from videos with AI-powered explanations.</p>

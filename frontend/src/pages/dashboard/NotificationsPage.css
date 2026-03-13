@@ -1,4 +1,4 @@
-.notif-page { max-width: 700px; }
+.notif-page { max-width: 700px; margin: 0 auto; padding: var(--space-xl) var(--space-lg); }
 
 .notif-header {
   display: flex;

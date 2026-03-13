@@ -1,4 +1,4 @@
-.profile-page { max-width: 680px; }
+.profile-page { max-width: 680px; margin: 0 auto; padding: var(--space-xl) var(--space-lg); }
 
 .profile-header { margin-bottom: var(--space-lg); }
 .profile-header h3 { margin-bottom: 4px; }

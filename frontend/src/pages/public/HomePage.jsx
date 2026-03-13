@@ -75,7 +75,7 @@ export default function HomePage() {
       <section className="section how-section">
         <div className="container">
           <div className="section-header">
-            <h2>How VidSearch Works</h2>
+            <h2>How VideoSearch Works</h2>
             <p>From paste to understanding in seconds.</p>
           </div>
           <div className="steps-grid">
@@ -116,7 +116,7 @@ export default function HomePage() {
         <div className="container">
           <div className="section-header">
             <h2>Loved by Learners</h2>
-            <p>See what our users have to say about VidSearch.</p>
+            <p>See what our users have to say about VideoSearch.</p>
           </div>
           <div className="testimonials-grid">
             {TESTIMONIALS.map((t, i) => (

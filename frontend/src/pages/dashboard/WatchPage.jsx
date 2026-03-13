@@ -94,7 +94,7 @@ export default function WatchPage({ params }) {
           <div className="watch-chat-header-left">
             <div className="watch-chat-avatar">AI</div>
             <div>
-              <div className="watch-chat-name">VidSearch Explainer</div>
+              <div className="watch-chat-name">VideoSearch Explainer</div>
               <div className="watch-chat-status">
                 <span className="watch-status-dot" />
                 AI Assistant

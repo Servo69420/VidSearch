@@ -1,4 +1,4 @@
-.dash { max-width: 1100px; }
+.dash { max-width: 1100px; margin: 0 auto; padding: var(--space-xl) var(--space-lg); }
 
 /* Welcome */
 .dash-welcome {

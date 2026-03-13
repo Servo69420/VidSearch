@@ -1,10 +1,8 @@
 import './AboutPage.css'
 
 const TEAM = [
-  { name: 'Alex Chen', role: 'Founder & CEO', avatar: 'AC', bio: 'Former ML engineer passionate about making education accessible through AI.' },
-  { name: 'Sarah Miller', role: 'Head of Product', avatar: 'SM', bio: 'EdTech veteran with 10 years of experience building learning platforms.' },
-  { name: 'David Kim', role: 'Lead Engineer', avatar: 'DK', bio: 'Full-stack developer specializing in AI integrations and real-time systems.' },
-  { name: 'Maria Garcia', role: 'Head of Design', avatar: 'MG', bio: 'UX designer focused on creating intuitive, accessible educational experiences.' },
+  { name: 'Timofej Gaiworonskij', role: 'Founder & CEO', avatar: 'TG', bio: 'Speedcuber turned software engineer. Approaches every problem like a Rubik\'s cube — break it down, find the algorithm, solve it fast. Passionate about mathematics, pattern recognition, and building tools that make complex ideas click.' },
+  { name: 'Adam Szablowski', role: 'Founder & CEO', avatar: 'AS', bio: 'Linux power user, weightlifter, and professional prompt engineer. Runs Arch btw. Combines deep technical knowledge with a passion for pushing AI to its limits — whether that\'s fine-tuning models or hitting a new PR at the gym.' },
 ]
 
 const VALUES = [
@@ -20,7 +18,7 @@ export default function AboutPage() {
       <section className="about-hero">
         <div className="container">
           <div className="section-header">
-            <h1>About VidSearch</h1>
+            <h1>About VideoSearch</h1>
             <p>Making video-based learning smarter, faster, and more interactive.</p>
           </div>
         </div>
@@ -30,7 +28,7 @@ export default function AboutPage() {
         <div className="container" style={{ maxWidth: 720, textAlign: 'center' }}>
           <h2>Our Mission</h2>
           <p className="about-mission-text">
-            We are building the future of video-based education. VidSearch transforms passive
+            We are building the future of video-based education. VideoSearch transforms passive
             video watching into active learning by letting you ask questions, get instant AI-powered
             explanations, and save key insights for later review.
           </p>
@@ -58,7 +56,7 @@ export default function AboutPage() {
         <div className="container">
           <div className="section-header">
             <h2>Meet the Team</h2>
-            <p>The people behind VidSearch.</p>
+            <p>The people behind VideoSearch.</p>
           </div>
           <div className="about-team-grid">
             {TEAM.map((t, i) => (

@@ -1,3 +1,77 @@
+/* ── Video Input Bar ── */
+.video-input-bar {
+  background: var(--navy-dark);
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+  padding: 16px 0;
+}
+
+.video-input-form {
+  display: flex;
+  align-items: center;
+  background: rgba(255,255,255,0.07);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: var(--radius-lg);
+  padding: 4px 4px 4px 16px;
+  transition: all var(--ease);
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+.video-input-form:focus-within {
+  background: rgba(255,255,255,0.1);
+  border-color: rgba(255,255,255,0.25);
+  box-shadow: 0 0 0 3px rgba(212,160,23,0.15);
+}
+
+.video-input-icon {
+  color: rgba(255,255,255,0.4);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+}
+
+.video-input {
+  flex: 1;
+  background: none;
+  border: none;
+  outline: none;
+  color: white;
+  font-size: var(--text-sm);
+  padding: 10px 12px;
+  min-width: 0;
+}
+
+.video-input::placeholder {
+  color: rgba(255,255,255,0.35);
+}
+
+.video-input-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 22px;
+  background: var(--gold);
+  color: white;
+  font-weight: 600;
+  font-size: var(--text-sm);
+  border: none;
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: all var(--ease);
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.video-input-btn:hover {
+  background: var(--gold-dark);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(212,160,23,0.3);
+}
+
+.video-input-btn-icon {
+  font-size: 11px;
+}
+
 /* ── Hero ── */
 .hero {
   background: linear-gradient(135deg, var(--navy-dark) 0%, var(--navy) 50%, var(--navy-light) 100%);
@@ -387,6 +461,7 @@
 }
 
 @media (max-width: 640px) {
+  .video-input-btn span.video-input-btn-icon { display: none; }
   .hero { padding: 60px 0 80px; }
   .hero-content h1 { font-size: 32px; }
   .features-grid, .testimonials-grid, .steps-grid, .videos-preview-grid { grid-template-columns: 1fr; }
