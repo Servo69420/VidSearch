@@ -1,0 +1,25 @@
+.faq-page { min-height: 60vh; }
+
+.faq-hero {
+  background: linear-gradient(135deg, var(--navy-dark) 0%, var(--navy) 100%);
+  padding: 60px 0;
+  text-align: center;
+}
+.faq-hero h1 { color: white; margin-bottom: 8px; }
+.faq-hero p { color: rgba(255,255,255,0.7); font-size: var(--text-lg); }
+
+.faq-content { background: var(--surface); }
+
+.faq-contact { background: var(--bg); }
+
+.faq-contact-btn {
+  display: inline-flex;
+  padding: 12px 28px;
+  background: var(--navy);
+  color: white;
+  font-weight: 600;
+  border-radius: var(--radius);
+  text-decoration: none;
+  transition: all var(--ease);
+}
+.faq-contact-btn:hover { background: var(--navy-light); }

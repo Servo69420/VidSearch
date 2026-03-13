@@ -1,0 +1,144 @@
+.hiw-page { min-height: 60vh; }
+
+.hiw-hero {
+  background: linear-gradient(135deg, var(--navy-dark) 0%, var(--navy) 100%);
+  padding: 60px 0 80px;
+  text-align: center;
+}
+.hiw-hero h1 { color: white; margin-bottom: 8px; font-size: 44px; }
+.hiw-hero p { color: rgba(255,255,255,0.7); font-size: var(--text-lg); }
+
+.hiw-badge {
+  display: inline-flex;
+  padding: 4px 14px;
+  background: rgba(255,255,255,0.1);
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: var(--radius-full);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--gold-light);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 16px;
+}
+
+/* ── Steps ── */
+.hiw-steps-section { background: var(--surface); }
+
+.hiw-steps {
+  max-width: 640px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.hiw-step {
+  display: flex;
+  gap: var(--space-lg);
+  position: relative;
+}
+
+.hiw-step-visual {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.hiw-step-number {
+  width: 48px;
+  height: 48px;
+  background: var(--navy);
+  color: white;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--text-xl);
+  font-weight: 700;
+  flex-shrink: 0;
+  z-index: 1;
+}
+
+.hiw-step-line {
+  width: 2px;
+  flex: 1;
+  background: var(--border);
+  min-height: 40px;
+}
+
+.hiw-step-content {
+  padding-bottom: var(--space-xl);
+  padding-top: 8px;
+}
+
+.hiw-step-content h3 { margin-bottom: 8px; font-size: var(--text-xl); }
+.hiw-step-content p { font-size: var(--text-md); line-height: 1.6; }
+
+/* ── Features ── */
+.hiw-features-section { background: var(--bg); }
+
+.hiw-features-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 24px;
+}
+
+.hiw-feature-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 28px;
+  transition: all var(--ease);
+}
+.hiw-feature-card:hover {
+  border-color: var(--navy-200);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-2px);
+}
+
+.hiw-feature-icon {
+  font-size: 28px;
+  margin-bottom: 16px;
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--navy-50);
+  border-radius: var(--radius);
+}
+
+.hiw-feature-card h5 { margin-bottom: 8px; }
+.hiw-feature-card p { font-size: var(--text-sm); line-height: 1.55; }
+
+/* ── CTA ── */
+.hiw-cta-section { background: var(--surface); }
+
+.hiw-cta {
+  background: linear-gradient(135deg, var(--navy-dark) 0%, var(--navy) 100%);
+  border-radius: var(--radius-xl);
+  padding: 60px 40px;
+  text-align: center;
+}
+.hiw-cta h2 { color: white; margin-bottom: 8px; }
+.hiw-cta p { color: rgba(255,255,255,0.7); font-size: var(--text-md); margin-bottom: 24px; }
+
+.hiw-cta-btn {
+  display: inline-flex;
+  padding: 14px 32px;
+  background: var(--gold);
+  color: white;
+  font-weight: 600;
+  font-size: var(--text-md);
+  border-radius: var(--radius);
+  text-decoration: none;
+  transition: all var(--ease);
+}
+.hiw-cta-btn:hover { background: var(--gold-dark); }
+
+@media (max-width: 768px) {
+  .hiw-hero h1 { font-size: 32px; }
+  .hiw-features-grid { grid-template-columns: 1fr; }
+}
