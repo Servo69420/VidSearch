@@ -11,8 +11,14 @@ export function AuthProvider({ children }) {
   })
 
   function register(userData) {
-    localStorage.setItem('videosearch_user', JSON.stringify(userData))
-    setUser(userData)
+    const fullUser = {
+      ...userData,
+      subscription: userData.subscription || 'free',
+      email: userData.email || '',
+      joinedAt: new Date().toISOString(),
+    }
+    localStorage.setItem('videosearch_user', JSON.stringify(fullUser))
+    setUser(fullUser)
   }
 
   function login(name) {
@@ -34,8 +40,15 @@ export function AuthProvider({ children }) {
     setUser(null)
   }
 
+  function updateProfile(fields) {
+    if (!user) return
+    const updated = { ...user, ...fields }
+    localStorage.setItem('videosearch_user', JSON.stringify(updated))
+    setUser(updated)
+  }
+
   return (
-    <AuthContext.Provider value={{ user, register, login, logout }}>
+    <AuthContext.Provider value={{ user, register, login, logout, updateProfile }}>
       {children}
     </AuthContext.Provider>
   )

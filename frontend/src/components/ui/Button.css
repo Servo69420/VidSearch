@@ -1,0 +1,36 @@
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-weight: 600;
+  border: none;
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: all var(--ease);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.btn:active { transform: scale(0.97); }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Sizes */
+.btn-sm { padding: 6px 12px; font-size: var(--text-xs); border-radius: var(--radius-sm); }
+.btn-md { padding: 9px 18px; font-size: var(--text-sm); }
+.btn-lg { padding: 12px 24px; font-size: var(--text-md); }
+
+/* Variants */
+.btn-primary { background: var(--navy); color: white; }
+.btn-primary:hover { background: var(--navy-light); }
+
+.btn-secondary { background: var(--teal); color: white; }
+.btn-secondary:hover { background: var(--teal-light); }
+
+.btn-outline { background: transparent; color: var(--navy); border: 1px solid var(--border); }
+.btn-outline:hover { border-color: var(--navy); background: var(--navy-50); }
+
+.btn-ghost { background: transparent; color: var(--text-secondary); }
+.btn-ghost:hover { background: var(--border-light); color: var(--text); }
+
+.btn-gold { background: var(--gold); color: white; }
+.btn-gold:hover { background: var(--gold-dark); }

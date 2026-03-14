@@ -1,0 +1,97 @@
+.pricing-page { min-height: 60vh; }
+
+.pricing-hero {
+  background: linear-gradient(135deg, var(--navy-dark) 0%, var(--navy) 100%);
+  padding: 60px 0 120px;
+  text-align: center;
+}
+.pricing-hero h1 { color: white; margin-bottom: 8px; }
+.pricing-hero p { color: rgba(255,255,255,0.7); font-size: var(--text-lg); }
+
+.pricing-badge {
+  display: inline-flex;
+  padding: 4px 14px;
+  background: rgba(255,255,255,0.1);
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: var(--radius-full);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--gold-light);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 16px;
+}
+
+.pricing-cards-section {
+  margin-top: -80px;
+  padding-bottom: var(--space-2xl);
+}
+
+.pricing-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 24px;
+  align-items: start;
+}
+
+/* ── Comparison Table ── */
+.pricing-comparison { background: var(--bg); }
+
+.comparison-table-wrapper { overflow-x: auto; }
+
+.comparison-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  box-shadow: var(--shadow);
+}
+
+.comparison-table th,
+.comparison-table td {
+  padding: 14px 20px;
+  text-align: center;
+  border-bottom: 1px solid var(--border);
+  font-size: var(--text-sm);
+}
+
+.comparison-table th {
+  background: var(--border-light);
+  font-weight: 600;
+  color: var(--text);
+  font-size: var(--text-sm);
+}
+
+.comparison-table th:first-child,
+.comparison-table td:first-child {
+  text-align: left;
+  font-weight: 500;
+}
+
+.comparison-table .highlight-col {
+  background: var(--navy-50);
+  font-weight: 600;
+}
+
+.comparison-table th.highlight-col {
+  background: var(--navy);
+  color: white;
+}
+
+.comparison-table tbody tr:last-child td { border-bottom: none; }
+
+/* ── FAQ ── */
+.pricing-faq { background: var(--surface); }
+
+.pricing-faq-link {
+  color: var(--navy);
+  font-weight: 600;
+  text-decoration: none;
+  font-size: var(--text-md);
+}
+.pricing-faq-link:hover { color: var(--navy-light); }
+
+@media (max-width: 1024px) {
+  .pricing-grid { grid-template-columns: 1fr; max-width: 420px; margin: 0 auto; }
+}
