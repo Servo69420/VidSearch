@@ -136,6 +136,7 @@ export default function HomePage() {
       </section>
 
       {/* ── CTA ── */}
+      {!user && (
       <section className="section cta-section">
         <div className="container">
           <div className="cta-box">
@@ -148,6 +149,7 @@ export default function HomePage() {
           </div>
         </div>
       </section>
+      )}
     </div>
   )
 }
