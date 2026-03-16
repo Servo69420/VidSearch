@@ -21,12 +21,12 @@ export function AuthProvider({ children }) {
     setUser(fullUser)
   }
 
-  function login(name) {
+  function login(username, password) {
     try {
       const s = localStorage.getItem('videosearch_user')
       if (s) {
         const stored = JSON.parse(s)
-        if (stored.name.toLowerCase() === name.toLowerCase()) {
+        if (stored.username && stored.username.toLowerCase() === username.toLowerCase() && stored.password === password) {
           setUser(stored)
           return true
         }
