@@ -6,7 +6,7 @@ import './LoginPage.css'
 
 export default function SignUpPage() {
   const { register } = useAuth()
-  const [form, setForm] = useState({ name: '', surname: '', email: '' })
+  const [form, setForm] = useState({ username: '', password: '', name: '', surname: '', email: '' })
   const [hobbies, setHobbies] = useState([])
   const [error, setError] = useState('')
 
@@ -18,16 +18,18 @@ export default function SignUpPage() {
 
   function handleSubmit(e) {
     e.preventDefault()
-    if (!form.name.trim() || !form.surname.trim()) {
-      setError('Please enter your name.')
+    if (!form.username.trim()) {
+      setError('Please enter a username.')
       return
     }
-    if (!form.email.trim()) {
-      setError('Please enter your email.')
+    if (!form.password.trim()) {
+      setError('Please enter a password.')
       return
     }
 
     register({
+      username: form.username.trim(),
+      password: form.password.trim(),
       name: form.name.trim(),
       surname: form.surname.trim(),
       email: form.email.trim(),
@@ -49,19 +51,39 @@ export default function SignUpPage() {
         </div>
 
         <form onSubmit={handleSubmit} className="auth-form">
+          <div className="auth-field">
+            <label>Username</label>
+            <input
+              type="text"
+              placeholder="Choose a username"
+              value={form.username}
+              onChange={e => { setForm(p => ({ ...p, username: e.target.value })); setError('') }}
+              autoFocus
+            />
+          </div>
+
+          <div className="auth-field">
+            <label>Password</label>
+            <input
+              type="password"
+              placeholder="Create a password"
+              value={form.password}
+              onChange={e => { setForm(p => ({ ...p, password: e.target.value })); setError('') }}
+            />
+          </div>
+
           <div className="auth-row">
             <div className="auth-field">
-              <label>First Name</label>
+              <label>First Name <span className="auth-optional">(optional)</span></label>
               <input
                 type="text"
                 placeholder="John"
                 value={form.name}
                 onChange={e => { setForm(p => ({ ...p, name: e.target.value })); setError('') }}
-                autoFocus
               />
             </div>
             <div className="auth-field">
-              <label>Last Name</label>
+              <label>Last Name <span className="auth-optional">(optional)</span></label>
               <input
                 type="text"
                 placeholder="Doe"
@@ -72,7 +94,7 @@ export default function SignUpPage() {
           </div>
 
           <div className="auth-field">
-            <label>Email</label>
+            <label>Email <span className="auth-optional">(optional)</span></label>
             <input
               type="email"
               placeholder="john@example.com"

@@ -5,20 +5,25 @@ import './LoginPage.css'
 
 export default function LoginPage() {
   const { login } = useAuth()
-  const [name, setName] = useState('')
+  const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
   const [error, setError] = useState('')
 
   function handleSubmit(e) {
     e.preventDefault()
-    if (!name.trim()) {
-      setError('Please enter your first name.')
+    if (!username.trim()) {
+      setError('Please enter your username.')
       return
     }
-    const ok = login(name.trim())
+    if (!password.trim()) {
+      setError('Please enter your password.')
+      return
+    }
+    const ok = login(username.trim(), password.trim())
     if (ok) {
       navigate('/dashboard')
     } else {
-      setError('No account found with that name. Try signing up instead.')
+      setError('Invalid username or password. Try again or sign up.')
     }
   }
 
@@ -36,13 +41,23 @@ export default function LoginPage() {
 
         <form onSubmit={handleSubmit} className="auth-form">
           <div className="auth-field">
-            <label>First Name</label>
+            <label>Username</label>
             <input
               type="text"
-              placeholder="Enter your first name"
-              value={name}
-              onChange={e => { setName(e.target.value); setError('') }}
+              placeholder="Enter your username"
+              value={username}
+              onChange={e => { setUsername(e.target.value); setError('') }}
               autoFocus
+            />
+          </div>
+
+          <div className="auth-field">
+            <label>Password</label>
+            <input
+              type="password"
+              placeholder="Enter your password"
+              value={password}
+              onChange={e => { setPassword(e.target.value); setError('') }}
             />
           </div>
 

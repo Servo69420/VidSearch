@@ -82,6 +82,12 @@
 }
 .auth-field input::placeholder { color: var(--text-muted); }
 
+.auth-optional {
+  font-weight: 400;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
 .auth-error {
   font-size: var(--text-sm);
   color: var(--error);
