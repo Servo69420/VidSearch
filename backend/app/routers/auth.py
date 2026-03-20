@@ -5,7 +5,7 @@ from typing import Optional
 import bcrypt
 import jwt
 from datetime import datetime, timedelta, timezone
-from asyncpg import Connection
+from asyncpg import Connection, UniqueViolationError
 
 from app.database import get_db
 from app.config import settings
@@ -66,18 +66,14 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
 
 @router.post("/register", status_code=status.HTTP_201_CREATED)
 async def register(body: RegisterRequest, db: Connection = Depends(get_db)):
-    existing = await db.fetchrow(
-        "SELECT id FROM users WHERE username = $1" + (" OR email = $2" if body.email else ""),
-        *([body.username, body.email] if body.email else [body.username])
-    )
-    if existing:
-        raise HTTPException(status_code=400, detail="Username or email already taken.")
-
     hashed = hash_password(body.password)
-    await db.execute(
-        "INSERT INTO users (username, email, password_hash) VALUES ($1, $2, $3)",
-        body.username, body.email, hashed
-    )
+    try:
+        await db.execute(
+            "INSERT INTO users (username, email, password_hash) VALUES ($1, $2, $3)",
+            body.username, body.email, hashed
+        )
+    except UniqueViolationError:
+        raise HTTPException(status_code=400, detail="Username or email already taken.")
     return {"message": "Account created successfully."}
 
 
