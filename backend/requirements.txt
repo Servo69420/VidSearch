@@ -1,0 +1,7 @@
+fastapi
+uvicorn[standard]
+asyncpg
+bcrypt
+pyjwt
+pydantic[email]
+pydantic-settings

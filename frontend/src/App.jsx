@@ -1,4 +1,5 @@
-import { useHashRouter } from './router'
+import { useHashRouter, navigate } from './router'
+import { useAuth } from './contexts/AuthContext'
 import Navbar from './components/layout/Navbar'
 import Footer from './components/layout/Footer'
 
@@ -33,6 +34,8 @@ import CookiePage from './pages/legal/CookiePage'
 import './styles/variables.css'
 import './styles/global.css'
 
+const PROTECTED = ['/dashboard', '/watch', '/history', '/watched', '/saved', '/subscription', '/profile', '/settings', '/notifications']
+
 const ROUTES = [
   { path: '/', component: HomePage },
   { path: '/browse', component: BrowseVideosPage },
@@ -61,7 +64,16 @@ const ROUTES = [
 
 export default function App() {
   const { current, params } = useHashRouter(ROUTES)
+  const { user, loading } = useAuth()
   const Page = current.component
+
+  if (loading) return null
+
+  const isProtected = PROTECTED.some(p => current.path === p || current.path.startsWith(p + '/'))
+  if (isProtected && !user) {
+    navigate('/login')
+    return null
+  }
 
   return (
     <div className="app">

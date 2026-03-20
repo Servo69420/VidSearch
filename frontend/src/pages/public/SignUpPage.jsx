@@ -9,6 +9,7 @@ export default function SignUpPage() {
   const [form, setForm] = useState({ username: '', password: '', name: '', surname: '', email: '' })
   const [hobbies, setHobbies] = useState([])
   const [error, setError] = useState('')
+  const [submitting, setSubmitting] = useState(false)
 
   function toggleHobby(label) {
     setHobbies(prev =>
@@ -16,26 +17,26 @@ export default function SignUpPage() {
     )
   }
 
-  function handleSubmit(e) {
+  async function handleSubmit(e) {
     e.preventDefault()
-    if (!form.username.trim()) {
-      setError('Please enter a username.')
-      return
+    if (!form.username.trim()) { setError('Please enter a username.'); return }
+    if (!form.password.trim()) { setError('Please enter a password.'); return }
+    setSubmitting(true)
+    try {
+      await register({
+        username: form.username.trim(),
+        password: form.password.trim(),
+        name: form.name.trim(),
+        surname: form.surname.trim(),
+        email: form.email.trim(),
+        hobbies,
+      })
+      navigate('/dashboard')
+    } catch (err) {
+      setError(err.message || 'Registration failed. Please try again.')
+    } finally {
+      setSubmitting(false)
     }
-    if (!form.password.trim()) {
-      setError('Please enter a password.')
-      return
-    }
-
-    register({
-      username: form.username.trim(),
-      password: form.password.trim(),
-      name: form.name.trim(),
-      surname: form.surname.trim(),
-      email: form.email.trim(),
-      hobbies,
-    })
-    navigate('/dashboard')
   }
 
   return (
@@ -121,7 +122,9 @@ export default function SignUpPage() {
 
           {error && <div className="auth-error">{error}</div>}
 
-          <button type="submit" className="auth-submit">Create Account</button>
+          <button type="submit" className="auth-submit" disabled={submitting}>
+            {submitting ? 'Creating account…' : 'Create Account'}
+          </button>
         </form>
 
         <div className="auth-footer">
