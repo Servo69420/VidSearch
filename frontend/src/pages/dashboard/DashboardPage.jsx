@@ -24,7 +24,7 @@ export default function DashboardPage() {
       {/* Welcome */}
       <div className="dash-welcome">
         <div className="dash-welcome-content">
-          <h2>Welcome back{user ? `, ${user.name}` : ''}!</h2>
+          <h2>Welcome back{user ? `, ${user.username}` : ''}!</h2>
           <p>
             {user?.hobbies?.length
               ? `Your recommendations are based on your ${user.hobbies.length} selected interest${user.hobbies.length !== 1 ? 's' : ''}.`

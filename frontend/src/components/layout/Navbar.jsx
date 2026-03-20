@@ -68,7 +68,7 @@ export default function Navbar() {
                 &#128276;
               </a>
               <Dropdown
-                trigger={<Avatar name={`${user.name} ${user.surname}`} size="sm" />}
+                trigger={<Avatar name={user.name && user.surname ? `${user.name} ${user.surname}` : user.username} size="sm" />}
                 items={accountItems}
                 align="right"
               />

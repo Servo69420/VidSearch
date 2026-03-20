@@ -8,5 +8,9 @@ CREATE TABLE IF NOT EXISTS users (
     username    TEXT UNIQUE NOT NULL,
     email       TEXT UNIQUE,
     password_hash TEXT NOT NULL,
+    name        TEXT DEFAULT '',
+    surname     TEXT DEFAULT '',
+    avatar_url  TEXT DEFAULT '',
+    subscription TEXT DEFAULT 'free',
     created_at  TIMESTAMPTZ DEFAULT now()
 );
