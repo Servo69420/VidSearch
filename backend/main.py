@@ -7,7 +7,7 @@ from fastapi.staticfiles import StaticFiles
 from file_input import router as file_router
 
 from app.database import connect, disconnect
-from app.routers import auth
+from app.routers import auth, Chat
 
 UPLOAD_DIR = Path(__file__).resolve().parent / "uploads"
 UPLOAD_DIR.mkdir(exist_ok=True)
@@ -32,6 +32,7 @@ app.add_middleware(
 )
 
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
+app.include_router(Chat.router, prefix="/chat", tags=["chat"])
 app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
 
 
