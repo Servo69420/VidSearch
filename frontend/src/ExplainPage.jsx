@@ -32,18 +32,23 @@ const PLACEHOLDER_MESSAGES = [
   },
 ]
 
+const API_BASE = 'http://localhost:8000'
+
 export default function ExplainPage() {
   const [urlInput, setUrlInput]   = useState('')
   const [videoId, setVideoId]     = useState(DEFAULT_VIDEO_ID)
+  const [localVideoUrl, setLocalVideoUrl] = useState(null)
   const [urlError, setUrlError]   = useState(false)
   const [chatInput, setChatInput] = useState('')
-  const [_uploadedFile, setUploadedFile] = useState(null)
+  const [uploading, setUploading] = useState(false)
+  const [uploadError, setUploadError] = useState(null)
   const fileInputRef = useRef(null)
 
   function handleLoadVideo() {
     const id = parseYouTubeId(urlInput.trim())
     if (id) {
       setVideoId(id)
+      setLocalVideoUrl(null)
       setUrlError(false)
     } else {
       setUrlError(true)
@@ -54,12 +59,33 @@ export default function ExplainPage() {
     if (e.key === 'Enter') handleLoadVideo()
   }
 
-  function handleFileChange(e) {
+  async function handleFileChange(e) {
     const file = e.target.files[0]
-    if (file) {
-      setUploadedFile(file)
-      // Placeholder: In a real implementation, you would upload the file to the backend here
-      console.log('Uploaded file:', file.name)
+    if (!file) return
+
+    setUploading(true)
+    setUploadError(null)
+
+    const formData = new FormData()
+    formData.append('file', file)
+
+    try {
+      const res = await fetch(`${API_BASE}/files/upload_video`, {
+        method: 'POST',
+        body: formData,
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err.detail || `Upload failed (${res.status})`)
+      }
+      const data = await res.json()
+      setLocalVideoUrl(`${API_BASE}${data.url}`)
+      setVideoId(null)
+    } catch (err) {
+      setUploadError(err.message)
+    } finally {
+      setUploading(false)
+      e.target.value = ''
     }
   }
 
@@ -100,25 +126,42 @@ export default function ExplainPage() {
         {urlError && (
           <div className="url-error">Could not parse a YouTube video ID from that URL.</div>
         )}
+        {uploadError && (
+          <div className="url-error">{uploadError}</div>
+        )}
+        {uploading && (
+          <div className="upload-status">Uploading video...</div>
+        )}
 
         {/* Embed */}
         <div className="video-embed-wrapper">
-          <iframe
-            key={videoId}
-            className="video-embed"
-            src={`https://www.youtube.com/embed/${videoId}?rel=0&modestbranding=1`}
-            title="YouTube video"
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-            allowFullScreen
-          />
+          {localVideoUrl ? (
+            <video
+              key={localVideoUrl}
+              className="video-embed"
+              src={localVideoUrl}
+              controls
+            />
+          ) : (
+            <iframe
+              key={videoId}
+              className="video-embed"
+              src={`https://www.youtube.com/embed/${videoId}?rel=0&modestbranding=1`}
+              title="YouTube video"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+              allowFullScreen
+            />
+          )}
         </div>
 
         {/* Video meta placeholder */}
         <div className="video-details">
           <div className="video-details-title">
-            {videoId === DEFAULT_VIDEO_ID
-              ? 'But what is a neural network? — 3Blue1Brown'
-              : 'Video loaded'}
+            {localVideoUrl
+              ? 'Uploaded video'
+              : videoId === DEFAULT_VIDEO_ID
+                ? 'But what is a neural network? — 3Blue1Brown'
+                : 'Video loaded'}
           </div>
           <div className="video-details-meta">
             <span className="placeholder-tag">⚠ Placeholder</span>
