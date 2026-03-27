@@ -31,6 +31,8 @@ import PrivacyPage from './pages/legal/PrivacyPage'
 import TermsPage from './pages/legal/TermsPage'
 import CookiePage from './pages/legal/CookiePage'
 
+import ExplainPage from './ExplainPage'
+
 import './styles/variables.css'
 import './styles/global.css'
 
@@ -45,6 +47,7 @@ const ROUTES = [
   { path: '/faq', component: FAQPage },
   { path: '/about', component: AboutPage },
   { path: '/contact', component: ContactPage },
+  { path: '/explain', component: ExplainPage },
   { path: '/login', component: LoginPage },
   { path: '/signup', component: SignUpPage },
   { path: '/dashboard', component: DashboardPage },

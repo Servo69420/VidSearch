@@ -4,7 +4,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from file_input import router as file_router
+from app.file_input import router as file_router
 
 from app.database import connect, disconnect
 from app.routers import auth

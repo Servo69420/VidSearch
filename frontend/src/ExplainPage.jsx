@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import './ExplainPage.css'
 
 // Extract YouTube video ID from common URL formats
@@ -37,6 +37,8 @@ export default function ExplainPage() {
   const [videoId, setVideoId]     = useState(DEFAULT_VIDEO_ID)
   const [urlError, setUrlError]   = useState(false)
   const [chatInput, setChatInput] = useState('')
+  const [_uploadedFile, setUploadedFile] = useState(null)
+  const fileInputRef = useRef(null)
 
   function handleLoadVideo() {
     const id = parseYouTubeId(urlInput.trim())
@@ -50,6 +52,19 @@ export default function ExplainPage() {
 
   function handleUrlKeyDown(e) {
     if (e.key === 'Enter') handleLoadVideo()
+  }
+
+  function handleFileChange(e) {
+    const file = e.target.files[0]
+    if (file) {
+      setUploadedFile(file)
+      // Placeholder: In a real implementation, you would upload the file to the backend here
+      console.log('Uploaded file:', file.name)
+    }
+  }
+
+  function handleUploadVideo() {
+    fileInputRef.current.click()
   }
 
   return (
@@ -71,6 +86,16 @@ export default function ExplainPage() {
           <button className="url-load-btn" onClick={handleLoadVideo}>
             Load
           </button>
+          <button className="url-upload-btn" onClick={handleUploadVideo}>
+            Upload Video
+          </button>
+          <input
+            type="file"
+            ref={fileInputRef}
+            onChange={handleFileChange}
+            accept="video/*"
+            style={{ display: 'none' }}
+          />
         </div>
         {urlError && (
           <div className="url-error">Could not parse a YouTube video ID from that URL.</div>
