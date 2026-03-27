@@ -20,19 +20,22 @@ const WELCOME_MESSAGE = {
   text: 'Hi! Paste a YouTube link above and I\'ll help you understand the video. You can ask me anything about its content.',
 }
 
-// TODO: Replace this with a real API call to your backend
 async function sendMessageToAPI(videoId, messages) {
-  // Example of what the real call would look like:
-  // const res = await fetch('/api/chat', {
-  //   method: 'POST',
-  //   headers: { 'Content-Type': 'application/json' },
-  //   body: JSON.stringify({ videoId, messages }),
-  // })
-  // const data = await res.json()
-  // return data.reply
-
-  // Placeholder response until backend is ready
-  return 'This is a placeholder response. Connect your backend API to get real answers about the video.'
+  const res = await fetch('http://localhost:8000/chat/ask', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      video_id: videoId,
+      message: messages
+        .filter(m => m.role === 'user')
+        .map(m => ({ role: m.role, content: m.text })),
+    }),
+  })
+  if (!res.ok) {
+    throw new Error(`API error: ${res.status}`)
+  }
+  const data = await res.json()
+  return data.choices[0].message.content
 }
 
 export default function WatchPage({ params }) {
@@ -190,8 +193,7 @@ export default function WatchPage({ params }) {
               className="watch-chat-send"
               onClick={handleSendMessage}
               disabled={!chatInput.trim() || isLoading}
-            >&#8593;</button>
-          </div>
+            >&#8593;</button>          </div>
         </div>
       </div>
     </div>
