@@ -91,7 +91,7 @@ export default function BrowseVideosPage() {
               <VideoCard
                 key={v.id}
                 video={v}
-                onClick={() => window.location.hash = `#/video/${v.id}`}
+                onClick={() => { window.location.hash = `#/watch/${v.id}` }}
               />
             ))}
           </div>
