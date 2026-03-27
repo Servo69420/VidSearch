@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { ALL_VIDEOS } from '../../data/data'
 import './WatchPage.css'
 
@@ -15,11 +15,25 @@ function parseYouTubeId(url) {
   return null
 }
 
-const PLACEHOLDER_MESSAGES = [
-  { role: 'assistant', text: 'Hi! Paste a YouTube link above and I\'ll help you understand the video. You can ask me anything about its content.' },
-  { role: 'user', text: 'What is a neural network?' },
-  { role: 'assistant', text: 'A neural network is a system of layers of interconnected nodes (neurons) loosely inspired by the human brain. Each layer transforms its input and passes it forward \u2014 the final layer produces a prediction or output.\n\nIn this video, 3Blue1Brown visualises how weights and biases shape those transformations.' },
-]
+const WELCOME_MESSAGE = {
+  role: 'assistant',
+  text: 'Hi! Paste a YouTube link above and I\'ll help you understand the video. You can ask me anything about its content.',
+}
+
+// TODO: Replace this with a real API call to your backend
+async function sendMessageToAPI(videoId, messages) {
+  // Example of what the real call would look like:
+  // const res = await fetch('/api/chat', {
+  //   method: 'POST',
+  //   headers: { 'Content-Type': 'application/json' },
+  //   body: JSON.stringify({ videoId, messages }),
+  // })
+  // const data = await res.json()
+  // return data.reply
+
+  // Placeholder response until backend is ready
+  return 'This is a placeholder response. Connect your backend API to get real answers about the video.'
+}
 
 export default function WatchPage({ params }) {
   const videoFromParams = params?.id ? ALL_VIDEOS.find(v => v.id === parseInt(params.id)) : null
@@ -31,6 +45,15 @@ export default function WatchPage({ params }) {
   const [videoTitle, setVideoTitle] = useState(defaultTitle)
   const [urlError, setUrlError] = useState(false)
   const [chatInput, setChatInput] = useState('')
+  const [messages, setMessages] = useState([WELCOME_MESSAGE])
+  const [isLoading, setIsLoading] = useState(false)
+
+  const messagesEndRef = useRef(null)
+  const inputRef = useRef(null)
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages, isLoading])
 
   function handleLoadVideo() {
     const id = parseYouTubeId(urlInput.trim())
@@ -38,6 +61,7 @@ export default function WatchPage({ params }) {
       setVideoId(id)
       setVideoTitle('Video loaded')
       setUrlError(false)
+      setMessages([WELCOME_MESSAGE])
     } else {
       setUrlError(true)
     }
@@ -45,6 +69,34 @@ export default function WatchPage({ params }) {
 
   function handleUrlKeyDown(e) {
     if (e.key === 'Enter') handleLoadVideo()
+  }
+
+  async function handleSendMessage() {
+    const text = chatInput.trim()
+    if (!text || isLoading) return
+
+    const userMessage = { role: 'user', text }
+    const updatedMessages = [...messages, userMessage]
+    setMessages(updatedMessages)
+    setChatInput('')
+    setIsLoading(true)
+
+    try {
+      const reply = await sendMessageToAPI(videoId, updatedMessages)
+      setMessages(prev => [...prev, { role: 'assistant', text: reply }])
+    } catch {
+      setMessages(prev => [...prev, { role: 'assistant', text: 'Sorry, something went wrong. Please try again.' }])
+    } finally {
+      setIsLoading(false)
+      inputRef.current?.focus()
+    }
+  }
+
+  function handleChatKeyDown(e) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      handleSendMessage()
+    }
   }
 
   return (
@@ -104,7 +156,7 @@ export default function WatchPage({ params }) {
         </div>
 
         <div className="watch-chat-messages">
-          {PLACEHOLDER_MESSAGES.map((msg, i) => (
+          {messages.map((msg, i) => (
             <div key={i} className={`watch-bubble-row ${msg.role}`}>
               {msg.role === 'assistant' && <div className="watch-bubble-avatar">AI</div>}
               <div className={`watch-bubble ${msg.role}`}>
@@ -112,25 +164,33 @@ export default function WatchPage({ params }) {
               </div>
             </div>
           ))}
-          <div className="watch-bubble-row assistant">
-            <div className="watch-bubble-avatar">AI</div>
-            <div className="watch-bubble assistant typing">
-              <span /><span /><span />
+          {isLoading && (
+            <div className="watch-bubble-row assistant">
+              <div className="watch-bubble-avatar">AI</div>
+              <div className="watch-bubble assistant typing">
+                <span /><span /><span />
+              </div>
             </div>
-          </div>
+          )}
+          <div ref={messagesEndRef} />
         </div>
 
         <div className="watch-chat-input-area">
-          <div className="watch-chat-notice">Chat powered by AI \u2014 responses are contextual to the video.</div>
+          <div className="watch-chat-notice">Chat powered by AI — responses are contextual to the video.</div>
           <div className="watch-chat-input-row">
             <input
+              ref={inputRef}
               className="watch-chat-input"
               value={chatInput}
               onChange={e => setChatInput(e.target.value)}
-              placeholder="Ask about this video\u2026"
-              disabled
+              onKeyDown={handleChatKeyDown}
+              placeholder="Ask about this video…"
             />
-            <button className="watch-chat-send" disabled>&#8593;</button>
+            <button
+              className="watch-chat-send"
+              onClick={handleSendMessage}
+              disabled={!chatInput.trim() || isLoading}
+            >&#8593;</button>
           </div>
         </div>
       </div>
