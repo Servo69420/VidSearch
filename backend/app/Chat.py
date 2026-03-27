@@ -33,10 +33,10 @@ async def ask(request: Chatrequest):
                 },
                 timeout=60.0
             )
-        if result.status_code != 200:
-            print(f"Error: OpenRouter API returned status code {result.status_code} with response: {result.text}")
-            raise HTTPException(status_code=502, detail="Error from AI provider.")
-        return result.json()
+            if result.status_code != 200:
+                print(f"Error: OpenRouter API returned status code {result.status_code} with response: {result.text}")
+                raise HTTPException(status_code=502, detail="Error from AI provider.")
+            return result.json()
         except httpx.TimeoutException:
             print("Error: The request to OpenRouter API timed out after 60 seconds.")
             raise HTTPException(status_code=504, detail="Request to AI provider timed out.")
