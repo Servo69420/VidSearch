@@ -22,7 +22,7 @@ async def ask(request: Chatrequest):
     async with httpx.AsyncClient() as client:
         try:
             result = await client.post(
-                "https://api.openrouter.ai/v1/chat/completions",
+                "https://openrouter.ai/api/v1/chat/completions",
                 headers={
                     "Authorization": f"Bearer {settings.OPENROUTER_API_KEY}",
                     "content-type": "application/json"
