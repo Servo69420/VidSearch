@@ -1,18 +1,38 @@
-import { ALL_VIDEOS, SAMPLE_WATCHED } from '../../data/data'
+import { ALL_VIDEOS } from '../../data/data'
+import { useHistory } from '../../contexts/HistoryContext'
+import { useWatchLater } from '../../contexts/WatchLaterContext'
 import VideoCard from '../../components/ui/VideoCard'
 import './WatchedPage.css'
 
-export default function WatchedPage() {
-  const watchedVideos = SAMPLE_WATCHED.map(w => ({
-    ...w,
-    video: ALL_VIDEOS.find(v => v.id === w.videoId),
-  })).filter(w => w.video)
+function groupLabel(isoDate) {
+  const d = new Date(isoDate)
+  const now = new Date()
+  const diffMs = now - d
+  const diffDays = Math.floor(diffMs / 86400000)
+  if (diffDays === 0) return 'Today'
+  if (diffDays === 1) return 'Yesterday'
+  if (diffDays <= 7) return 'This Week'
+  return 'Earlier'
+}
 
-  const groups = [
-    { label: 'Today', items: watchedVideos.filter(w => w.watchedAt.includes('hour')) },
-    { label: 'This Week', items: watchedVideos.filter(w => w.watchedAt === 'Yesterday' || w.watchedAt.includes('days')) },
-    { label: 'Earlier', items: watchedVideos.filter(w => w.watchedAt.includes('week')) },
-  ].filter(g => g.items.length > 0)
+export default function WatchedPage() {
+  const { entries } = useHistory()
+  const { isFavourite, toggle } = useWatchLater()
+
+  const watchedVideos = entries
+    .map(e => ({ ...e, video: ALL_VIDEOS.find(v => v.id === e.id) }))
+    .filter(e => e.video)
+
+  const groupOrder = ['Today', 'Yesterday', 'This Week', 'Earlier']
+  const grouped = groupOrder.reduce((acc, label) => ({ ...acc, [label]: [] }), {})
+  watchedVideos.forEach(e => {
+    const label = groupLabel(e.visitedAt)
+    grouped[label].push(e)
+  })
+
+  const groups = groupOrder
+    .filter(label => grouped[label].length > 0)
+    .map(label => ({ label, items: grouped[label] }))
 
   return (
     <div className="watched-page">
@@ -21,20 +41,22 @@ export default function WatchedPage() {
         <p>Videos you have previously watched.</p>
       </div>
 
+      {groups.length === 0 && (
+        <p className="watched-empty">No videos watched yet. <a href="#/browse">Browse videos</a></p>
+      )}
+
       {groups.map(g => (
         <div key={g.label} className="watched-group">
           <h5 className="watched-group-label">{g.label}</h5>
           <div className="watched-grid">
-            {g.items.map(w => (
-              <div key={w.videoId} className="watched-card-wrapper">
-                <VideoCard
-                  video={w.video}
-                  onClick={() => window.location.hash = `#/watch/${w.video.id}`}
-                />
-                <div className="watched-progress">
-                  <div className="watched-progress-bar" style={{ width: `${w.progress}%` }} />
-                </div>
-              </div>
+            {g.items.map(e => (
+              <VideoCard
+                key={e.id}
+                video={e.video}
+                onClick={() => { window.location.hash = `#/watch/${e.video.id}` }}
+                isFavourite={isFavourite(e.video.id)}
+                onToggleFavourite={toggle}
+              />
             ))}
           </div>
         </div>

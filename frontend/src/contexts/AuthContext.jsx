@@ -33,11 +33,11 @@ export function AuthProvider({ children }) {
       .finally(() => setLoading(false))
   }, [])
 
-  async function register({ username, password, email }) {
+  async function register({ username, password, email, hobbies }) {
     const res = await fetch(`${API_BASE}/auth/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, email: email || null, password }),
+      body: JSON.stringify({ username, email: email || null, password, hobbies: hobbies || [] }),
     })
     if (!res.ok) {
       const err = await res.json()

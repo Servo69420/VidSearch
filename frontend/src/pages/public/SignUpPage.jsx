@@ -10,6 +10,7 @@ export default function SignUpPage() {
   const [hobbies, setHobbies] = useState([])
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [showPassword, setShowPassword] = useState(false)
 
   function toggleHobby(label) {
     setHobbies(prev =>
@@ -65,12 +66,22 @@ export default function SignUpPage() {
 
           <div className="auth-field">
             <label>Password</label>
-            <input
-              type="password"
-              placeholder="Create a password"
-              value={form.password}
-              onChange={e => { setForm(p => ({ ...p, password: e.target.value })); setError('') }}
-            />
+            <div className="auth-password-wrapper">
+              <input
+                type={showPassword ? 'text' : 'password'}
+                placeholder="Create a password"
+                value={form.password}
+                onChange={e => { setForm(p => ({ ...p, password: e.target.value })); setError('') }}
+              />
+              <button
+                type="button"
+                className="auth-password-toggle"
+                onClick={() => setShowPassword(p => !p)}
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
+              >
+                {showPassword ? '🙈' : '👁️'}
+              </button>
+            </div>
           </div>
 
           <div className="auth-row">

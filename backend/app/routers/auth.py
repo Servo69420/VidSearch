@@ -25,6 +25,7 @@ class RegisterRequest(BaseModel):
     username: str
     email: Optional[EmailStr] = None
     password: str
+    hobbies: list[str] = []
 
     @field_validator('email', mode='before')
     @classmethod
@@ -84,8 +85,8 @@ async def register(body: RegisterRequest, db: Connection = Depends(get_db)):
     hashed = hash_password(body.password)
     try:
         await db.execute(
-            "INSERT INTO users (username, email, password_hash) VALUES ($1, $2, $3)",
-            body.username, body.email, hashed
+            "INSERT INTO users (username, email, password_hash, hobbies) VALUES ($1, $2, $3, $4)",
+            body.username, body.email, hashed, body.hobbies
         )
     except UniqueViolationError:
         raise HTTPException(status_code=400, detail="Username or email already taken.")
@@ -108,7 +109,7 @@ async def login(body: LoginRequest, db: Connection = Depends(get_db)):
 @router.get("/me")
 async def me(current_user=Depends(get_current_user), db: Connection = Depends(get_db)):
     user = await db.fetchrow(
-        "SELECT id, username, email, name, surname, avatar_url, subscription, created_at "
+        "SELECT id, username, email, name, surname, avatar_url, subscription, hobbies, created_at "
         "FROM users WHERE id = $1::uuid",
         current_user["sub"]
     )
@@ -122,6 +123,7 @@ async def me(current_user=Depends(get_current_user), db: Connection = Depends(ge
         "surname": user["surname"] or "",
         "avatar_url": user["avatar_url"] or "",
         "subscription": user["subscription"] or "free",
+        "hobbies": list(user["hobbies"] or []),
         "created_at": user["created_at"].isoformat() if user["created_at"] else None,
     }
 

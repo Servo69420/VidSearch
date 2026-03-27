@@ -175,6 +175,22 @@
 
 .dash-topic-count { font-size: 11px; opacity: 0.65; }
 
+.dash-topic-chip { cursor: pointer; border: 1px solid transparent; }
+
+.dash-video-fav {
+  font-size: 13px;
+  color: #dc2626;
+  flex-shrink: 0;
+  margin-left: 2px;
+}
+
+.dash-empty {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  padding: 8px 0;
+}
+.dash-empty a { color: var(--navy); text-decoration: underline; }
+
 @media (max-width: 1024px) {
   .dash-stats { grid-template-columns: repeat(2, 1fr); }
   .dash-grid { grid-template-columns: 1fr; }

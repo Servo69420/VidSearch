@@ -13,4 +13,5 @@ CREATE TABLE IF NOT EXISTS users (
     avatar_url  TEXT DEFAULT '',
     subscription TEXT DEFAULT 'free',
     created_at  TIMESTAMPTZ DEFAULT now()
+    hobbies    TEXT[] DEFAULT '{}'
 );

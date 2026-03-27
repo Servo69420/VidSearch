@@ -21,34 +21,19 @@ export function ThemeProvider({ children }) {
 
   useEffect(() => () => timers.current.forEach(clearTimeout), [])
 
-  const toggleTheme = useCallback((e) => {
+  const toggleTheme = useCallback(() => {
     if (busy.current) return
     busy.current = true
 
     const nextDark = !dark
 
-    // ── Reduced-motion: instant swap ─────────────────────────────
     if (prefersReducedMotion()) {
       setDark(nextDark)
       busy.current = false
       return
     }
 
-    // ── Origin: button center, falls back to top-center ──────────
-    const rect = e?.currentTarget?.getBoundingClientRect?.()
-    const ox = rect ? Math.round(rect.left + rect.width / 2) : window.innerWidth / 2
-    const oy = rect ? Math.round(rect.top + rect.height / 2) : 32
-
-    // Radius large enough to cover every viewport corner
-    const maxR = Math.ceil(Math.max(
-      Math.hypot(ox, oy),
-      Math.hypot(window.innerWidth - ox, oy),
-      Math.hypot(ox, window.innerHeight - oy),
-      Math.hypot(window.innerWidth - ox, window.innerHeight - oy),
-    )) + 4
-
-    // Veil = leaving theme's background, covering full viewport
-    const oldBg = dark ? '#0f172a' : '#F8FAFC'
+    // Fade veil over the page, swap theme, then fade out
     const veil = document.createElement('div')
     veil.setAttribute('aria-hidden', 'true')
     veil.style.cssText = [
@@ -56,26 +41,26 @@ export function ThemeProvider({ children }) {
       'inset:0',
       'z-index:9999',
       'pointer-events:none',
-      `background:${oldBg}`,
-      `clip-path:circle(${maxR}px at ${ox}px ${oy}px)`,
-      'will-change:clip-path',
+      'background:#000',
+      'opacity:0',
+      'transition:opacity 400ms ease-in-out',
+      'will-change:opacity',
     ].join(';')
     document.body.appendChild(veil)
 
-    // Switch theme now — new theme applies beneath the veil
-    setDark(nextDark)
-
-    // After paint: collapse the circle back into the toggle origin
     requestAnimationFrame(() => requestAnimationFrame(() => {
-      veil.style.transition = 'clip-path 500ms cubic-bezier(0.0, 0.0, 0.2, 1.0)'
-      veil.style.clipPath = `circle(0px at ${ox}px ${oy}px)`
+      veil.style.opacity = '0.25'
     }))
 
-    // Cleanup
     const t1 = setTimeout(() => {
-      veil.remove()
-      busy.current = false
-    }, 540)
+      setDark(nextDark)
+      veil.style.opacity = '0'
+      const t2 = setTimeout(() => {
+        veil.remove()
+        busy.current = false
+      }, 420)
+      timers.current = [t2]
+    }, 420)
 
     timers.current = [t1]
   }, [dark])

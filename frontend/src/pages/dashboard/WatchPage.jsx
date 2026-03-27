@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { ALL_VIDEOS } from '../../data/data'
+import { useHistory } from '../../contexts/HistoryContext'
 import './WatchPage.css'
 
 function parseYouTubeId(url) {
@@ -39,6 +40,7 @@ async function sendMessageToAPI(videoId, messages) {
 }
 
 export default function WatchPage({ params }) {
+  const { recordVisit } = useHistory()
   const videoFromParams = params?.id ? ALL_VIDEOS.find(v => v.id === parseInt(params.id)) : null
   const defaultYoutubeId = videoFromParams?.youtubeId || 'aircAruvnKk'
   const defaultTitle = videoFromParams?.title || 'But what is a neural network? \u2014 3Blue1Brown'
@@ -57,6 +59,10 @@ export default function WatchPage({ params }) {
   const messagesEndRef = useRef(null)
   const inputRef = useRef(null)
   const fileInputRef = useRef(null)
+
+  useEffect(() => {
+    if (params?.id) recordVisit(params.id)
+  }, [params?.id])
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
