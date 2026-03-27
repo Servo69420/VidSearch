@@ -20,6 +20,7 @@
 .url-bar {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
   background: var(--surface);
   border: 1px solid var(--border);
@@ -33,10 +34,19 @@
 }
 .url-bar.error { border-color: var(--danger, #ef4444); }
 
+.url-input-group {
+  flex: 1 1 320px;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .url-icon { color: var(--accent); font-size: 14px; flex-shrink: 0; }
 
 .url-input {
-  flex: 1;
+  flex: 1 1 auto;
+  min-width: 0;
   border: none;
   outline: none;
   background: none;
@@ -45,6 +55,12 @@
 }
 .url-input::placeholder { color: var(--text-muted); }
 .url-input.error::placeholder { color: #ef4444; }
+
+.url-actions {
+  display: flex;
+  gap: 8px;
+  flex: 0 0 auto;
+}
 
 .url-load-btn {
   padding: 4px 12px;
@@ -71,6 +87,23 @@
   transition: background 0.12s;
 }
 .url-upload-btn:hover { background: var(--secondary-hover, #4b5563); }
+
+@media (max-width: 900px) {
+  .url-bar {
+    align-items: stretch;
+  }
+
+  .url-input-group,
+  .url-actions {
+    flex: 1 1 100%;
+  }
+
+  .url-load-btn,
+  .url-upload-btn {
+    flex: 1 1 0;
+    min-height: 36px;
+  }
+}
 
 .url-error {
   font-size: 12px;

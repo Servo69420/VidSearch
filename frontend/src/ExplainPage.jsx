@@ -1,7 +1,6 @@
-import { useState, useRef } from 'react'
+import { useRef, useState } from 'react'
 import './ExplainPage.css'
 
-// Extract YouTube video ID from common URL formats
 function parseYouTubeId(url) {
   const patterns = [
     /(?:v=)([^&\n?#]+)/,
@@ -9,18 +8,18 @@ function parseYouTubeId(url) {
     /(?:embed\/)([^&\n?#]+)/,
   ]
   for (const re of patterns) {
-    const m = url.match(re)
-    if (m) return m[1]
+    const match = url.match(re)
+    if (match) return match[1]
   }
   return null
 }
 
-const DEFAULT_VIDEO_ID = 'aircAruvnKk' // 3Blue1Brown — Neural Networks
+const DEFAULT_VIDEO_ID = 'aircAruvnKk'
 
 const PLACEHOLDER_MESSAGES = [
   {
     role: 'assistant',
-    text: 'Hi! Paste a YouTube link above and I\'ll help you understand the video. You can ask me anything about its content.',
+    text: 'Hi! Paste a YouTube link above and I will help you understand the video. You can ask me anything about its content.',
   },
   {
     role: 'user',
@@ -28,17 +27,17 @@ const PLACEHOLDER_MESSAGES = [
   },
   {
     role: 'assistant',
-    text: 'A neural network is a system of layers of interconnected nodes (neurons) loosely inspired by the human brain. Each layer transforms its input and passes it forward — the final layer produces a prediction or output.\n\nIn this video, 3Blue1Brown visualises how weights and biases shape those transformations.',
+    text: 'A neural network is a system of layers of interconnected nodes loosely inspired by the human brain. Each layer transforms its input and passes it forward, and the final layer produces a prediction or output.\n\nIn this video, 3Blue1Brown visualizes how weights and biases shape those transformations.',
   },
 ]
 
 const API_BASE = 'http://localhost:8000'
 
 export default function ExplainPage() {
-  const [urlInput, setUrlInput]   = useState('')
-  const [videoId, setVideoId]     = useState(DEFAULT_VIDEO_ID)
+  const [urlInput, setUrlInput] = useState('')
+  const [videoId, setVideoId] = useState(DEFAULT_VIDEO_ID)
   const [localVideoUrl, setLocalVideoUrl] = useState(null)
-  const [urlError, setUrlError]   = useState(false)
+  const [urlError, setUrlError] = useState(false)
   const [chatInput, setChatInput] = useState('')
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState(null)
@@ -50,17 +49,18 @@ export default function ExplainPage() {
       setVideoId(id)
       setLocalVideoUrl(null)
       setUrlError(false)
-    } else {
-      setUrlError(true)
+      return
     }
+
+    setUrlError(true)
   }
 
-  function handleUrlKeyDown(e) {
-    if (e.key === 'Enter') handleLoadVideo()
+  function handleUrlKeyDown(event) {
+    if (event.key === 'Enter') handleLoadVideo()
   }
 
-  async function handleFileChange(e) {
-    const file = e.target.files[0]
+  async function handleFileChange(event) {
+    const file = event.target.files[0]
     if (!file) return
 
     setUploading(true)
@@ -70,51 +70,58 @@ export default function ExplainPage() {
     formData.append('file', file)
 
     try {
-      const res = await fetch(`${API_BASE}/files/upload_video`, {
+      const response = await fetch(`${API_BASE}/files/upload_video`, {
         method: 'POST',
         body: formData,
       })
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}))
-        throw new Error(err.detail || `Upload failed (${res.status})`)
+
+      if (!response.ok) {
+        const errorBody = await response.json().catch(() => ({}))
+        throw new Error(errorBody.detail || `Upload failed (${response.status})`)
       }
-      const data = await res.json()
+
+      const data = await response.json()
       setLocalVideoUrl(`${API_BASE}${data.url}`)
       setVideoId(null)
-    } catch (err) {
-      setUploadError(err.message)
+    } catch (error) {
+      setUploadError(error.message)
     } finally {
       setUploading(false)
-      e.target.value = ''
+      event.target.value = ''
     }
   }
 
   function handleUploadVideo() {
-    fileInputRef.current.click()
+    fileInputRef.current?.click()
   }
 
   return (
     <div className="explain-layout">
-
-      {/* ── Left panel — video ── */}
       <div className="explain-left">
-
-        {/* URL bar */}
         <div className="url-bar">
-          <span className="url-icon">▶</span>
-          <input
-            className={urlError ? 'url-input error' : 'url-input'}
-            value={urlInput}
-            onChange={e => { setUrlInput(e.target.value); setUrlError(false) }}
-            onKeyDown={handleUrlKeyDown}
-            placeholder="Paste a YouTube URL and press Enter…"
-          />
-          <button className="url-load-btn" onClick={handleLoadVideo}>
-            Load
-          </button>
-          <button className="url-upload-btn" onClick={handleUploadVideo}>
-            Upload Video
-          </button>
+          <div className="url-input-group">
+            <span className="url-icon">▶</span>
+            <input
+              className={urlError ? 'url-input error' : 'url-input'}
+              value={urlInput}
+              onChange={event => {
+                setUrlInput(event.target.value)
+                setUrlError(false)
+              }}
+              onKeyDown={handleUrlKeyDown}
+              placeholder="Paste a YouTube URL and press Enter..."
+            />
+          </div>
+
+          <div className="url-actions">
+            <button className="url-load-btn" onClick={handleLoadVideo}>
+              Load
+            </button>
+            <button className="url-upload-btn" onClick={handleUploadVideo}>
+              Upload File
+            </button>
+          </div>
+
           <input
             type="file"
             ref={fileInputRef}
@@ -123,6 +130,7 @@ export default function ExplainPage() {
             style={{ display: 'none' }}
           />
         </div>
+
         {urlError && (
           <div className="url-error">Could not parse a YouTube video ID from that URL.</div>
         )}
@@ -133,7 +141,6 @@ export default function ExplainPage() {
           <div className="upload-status">Uploading video...</div>
         )}
 
-        {/* Embed */}
         <div className="video-embed-wrapper">
           {localVideoUrl ? (
             <video
@@ -154,26 +161,31 @@ export default function ExplainPage() {
           )}
         </div>
 
-        {/* Video meta placeholder */}
         <div className="video-details">
           <div className="video-details-title">
             {localVideoUrl
               ? 'Uploaded video'
               : videoId === DEFAULT_VIDEO_ID
-                ? 'But what is a neural network? — 3Blue1Brown'
+                ? 'But what is a neural network? - 3Blue1Brown'
                 : 'Video loaded'}
           </div>
           <div className="video-details-meta">
-            <span className="placeholder-tag">⚠ Placeholder</span>
-            <span>Title, description & transcript will be fetched by the backend</span>
+            <span className="placeholder-tag">Placeholder</span>
+            <span>Title, description and transcript will be fetched by the backend</span>
           </div>
 
           <div className="segment-row">
             <div className="segment-label">Segments</div>
             <div className="segment-list">
-              {['0:00 Introduction', '1:42 Neurons & layers', '4:10 Weights & biases', '7:30 Activation functions', '11:05 Training overview'].map((s, i) => (
-                <button key={i} className={`segment-chip ${i === 1 ? 'segment-active' : ''}`}>
-                  {s}
+              {[
+                '0:00 Introduction',
+                '1:42 Neurons and layers',
+                '4:10 Weights and biases',
+                '7:30 Activation functions',
+                '11:05 Training overview',
+              ].map((segment, index) => (
+                <button key={segment} className={`segment-chip ${index === 1 ? 'segment-active' : ''}`}>
+                  {segment}
                 </button>
               ))}
             </div>
@@ -181,7 +193,6 @@ export default function ExplainPage() {
         </div>
       </div>
 
-      {/* ── Right panel — chat placeholder ── */}
       <div className="explain-right">
         <div className="chat-header">
           <div className="chat-header-left">
@@ -190,46 +201,47 @@ export default function ExplainPage() {
               <div className="chat-name">VideoSearch Explainer</div>
               <div className="chat-status">
                 <span className="status-dot" />
-                LLM API — not connected yet
+                LLM API not connected yet
               </div>
             </div>
           </div>
-          <span className="placeholder-tag">⚠ Placeholder</span>
+          <span className="placeholder-tag">Placeholder</span>
         </div>
 
         <div className="chat-messages">
-          {PLACEHOLDER_MESSAGES.map((msg, i) => (
-            <div key={i} className={`chat-bubble-row ${msg.role}`}>
-              {msg.role === 'assistant' && (
+          {PLACEHOLDER_MESSAGES.map((message, index) => (
+            <div key={index} className={`chat-bubble-row ${message.role}`}>
+              {message.role === 'assistant' && (
                 <div className="bubble-avatar">AI</div>
               )}
-              <div className={`chat-bubble ${msg.role}`}>
-                {msg.text.split('\n\n').map((para, j) => (
-                  <p key={j}>{para}</p>
+              <div className={`chat-bubble ${message.role}`}>
+                {message.text.split('\n\n').map((paragraph, paragraphIndex) => (
+                  <p key={paragraphIndex}>{paragraph}</p>
                 ))}
               </div>
             </div>
           ))}
 
-          {/* Typing indicator */}
           <div className="chat-bubble-row assistant">
             <div className="bubble-avatar">AI</div>
             <div className="chat-bubble assistant typing">
-              <span /><span /><span />
+              <span />
+              <span />
+              <span />
             </div>
           </div>
         </div>
 
         <div className="chat-input-area">
           <div className="chat-input-notice">
-            Chat will be powered by the LLM API — coming soon.
+            Chat will be powered by the LLM API soon.
           </div>
           <div className="chat-input-row">
             <input
               className="chat-input"
               value={chatInput}
-              onChange={e => setChatInput(e.target.value)}
-              placeholder="Ask about this video…"
+              onChange={event => setChatInput(event.target.value)}
+              placeholder="Ask about this video..."
               disabled
             />
             <button className="chat-send-btn" disabled>

@@ -26,6 +26,7 @@
 .watch-url-bar {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
   background: var(--surface);
   border: 1px solid var(--border);
@@ -34,10 +35,19 @@
   margin-bottom: var(--space-md);
 }
 
+.watch-url-input-group {
+  flex: 1 1 320px;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .watch-url-icon { color: var(--navy); font-size: 14px; }
 
 .watch-url-input {
-  flex: 1;
+  flex: 1 1 auto;
+  min-width: 0;
   border: none;
   background: none;
   outline: none;
@@ -46,6 +56,12 @@
 }
 .watch-url-input.error { color: var(--error); }
 .watch-url-input::placeholder { color: var(--text-muted); }
+
+.watch-url-actions {
+  display: flex;
+  gap: 8px;
+  flex: 0 0 auto;
+}
 
 .watch-url-btn {
   padding: 6px 16px;
@@ -59,9 +75,27 @@
 }
 .watch-url-btn:hover { background: var(--navy-light); }
 
+.watch-url-upload-btn {
+  padding: 6px 16px;
+  background: var(--teal);
+  color: white;
+  font-weight: 600;
+  font-size: var(--text-xs);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background var(--ease);
+}
+.watch-url-upload-btn:hover { background: #0f8b8d; }
+
 .watch-url-error {
   font-size: var(--text-xs);
   color: var(--error);
+  margin: -8px 0 12px 4px;
+}
+
+.watch-upload-status {
+  font-size: var(--text-xs);
+  color: var(--navy);
   margin: -8px 0 12px 4px;
 }
 
@@ -305,4 +339,8 @@
 @media (max-width: 900px) {
   .watch-layout { flex-direction: column; }
   .watch-right { max-width: 100%; min-width: 0; max-height: 50vh; }
+  .watch-url-input-group,
+  .watch-url-actions { flex: 1 1 100%; }
+  .watch-url-btn,
+  .watch-url-upload-btn { flex: 1 1 0; }
 }

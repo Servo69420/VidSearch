@@ -45,14 +45,18 @@ export default function WatchPage({ params }) {
 
   const [urlInput, setUrlInput] = useState('')
   const [videoId, setVideoId] = useState(defaultYoutubeId)
+  const [localVideoUrl, setLocalVideoUrl] = useState(null)
   const [videoTitle, setVideoTitle] = useState(defaultTitle)
   const [urlError, setUrlError] = useState(false)
   const [chatInput, setChatInput] = useState('')
   const [messages, setMessages] = useState([WELCOME_MESSAGE])
   const [isLoading, setIsLoading] = useState(false)
+  const [isUploading, setIsUploading] = useState(false)
+  const [uploadError, setUploadError] = useState('')
 
   const messagesEndRef = useRef(null)
   const inputRef = useRef(null)
+  const fileInputRef = useRef(null)
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -62,8 +66,10 @@ export default function WatchPage({ params }) {
     const id = parseYouTubeId(urlInput.trim())
     if (id) {
       setVideoId(id)
+      setLocalVideoUrl(null)
       setVideoTitle('Video loaded')
       setUrlError(false)
+      setUploadError('')
       setMessages([WELCOME_MESSAGE])
     } else {
       setUrlError(true)
@@ -102,32 +108,94 @@ export default function WatchPage({ params }) {
     }
   }
 
+  async function handleFileChange(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    setIsUploading(true)
+    setUploadError('')
+    setUrlError(false)
+
+    const formData = new FormData()
+    formData.append('file', file)
+
+    try {
+      const res = await fetch('http://localhost:8000/files/upload_video', {
+        method: 'POST',
+        body: formData,
+      })
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err.detail || `Upload failed (${res.status})`)
+      }
+
+      const data = await res.json()
+      setLocalVideoUrl(`http://localhost:8000${data.url}`)
+      setVideoId('')
+      setVideoTitle(file.name)
+      setMessages([WELCOME_MESSAGE])
+    } catch (err) {
+      setUploadError(err.message || 'Upload failed.')
+    } finally {
+      setIsUploading(false)
+      e.target.value = ''
+    }
+  }
+
+  function handleUploadClick() {
+    fileInputRef.current?.click()
+  }
+
   return (
     <div className="watch-layout">
       {/* Left panel - video */}
       <div className="watch-left">
         <div className="watch-url-bar">
-          <span className="watch-url-icon">&#9654;</span>
+          <div className="watch-url-input-group">
+            <span className="watch-url-icon">&#9654;</span>
+            <input
+              className={`watch-url-input ${urlError ? 'error' : ''}`}
+              value={urlInput}
+              onChange={e => { setUrlInput(e.target.value); setUrlError(false) }}
+              onKeyDown={handleUrlKeyDown}
+              placeholder="Paste a YouTube URL and press Enter\u2026"
+            />
+          </div>
+          <div className="watch-url-actions">
+            <button className="watch-url-btn" onClick={handleLoadVideo}>Load</button>
+            <button className="watch-url-upload-btn" onClick={handleUploadClick}>Upload File</button>
+          </div>
           <input
-            className={`watch-url-input ${urlError ? 'error' : ''}`}
-            value={urlInput}
-            onChange={e => { setUrlInput(e.target.value); setUrlError(false) }}
-            onKeyDown={handleUrlKeyDown}
-            placeholder="Paste a YouTube URL and press Enter\u2026"
+            type="file"
+            ref={fileInputRef}
+            onChange={handleFileChange}
+            accept="video/*"
+            style={{ display: 'none' }}
           />
-          <button className="watch-url-btn" onClick={handleLoadVideo}>Load</button>
         </div>
         {urlError && <div className="watch-url-error">Could not parse a YouTube video ID from that URL.</div>}
+        {uploadError && <div className="watch-url-error">{uploadError}</div>}
+        {isUploading && <div className="watch-upload-status">Uploading video...</div>}
 
         <div className="watch-embed-wrapper">
-          <iframe
-            key={videoId}
-            className="watch-embed"
-            src={`https://www.youtube.com/embed/${videoId}?rel=0&modestbranding=1`}
-            title="YouTube video"
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-            allowFullScreen
-          />
+          {localVideoUrl ? (
+            <video
+              key={localVideoUrl}
+              className="watch-embed"
+              src={localVideoUrl}
+              controls
+            />
+          ) : (
+            <iframe
+              key={videoId}
+              className="watch-embed"
+              src={`https://www.youtube.com/embed/${videoId}?rel=0&modestbranding=1`}
+              title="YouTube video"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+              allowFullScreen
+            />
+          )}
         </div>
 
         <div className="watch-details">
