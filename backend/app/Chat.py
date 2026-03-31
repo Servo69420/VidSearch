@@ -28,7 +28,7 @@ async def ask(request: Chatrequest):
                     "content-type": "application/json"
                 },
                 json={
-                    "model": "nvidia/nemotron-3-super-120b-a12b:free",#
+                    "model": "openrouter/free",#
                     "messages": openai_messages
                 },
                 timeout=60.0
