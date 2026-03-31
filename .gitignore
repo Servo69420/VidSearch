@@ -20,11 +20,16 @@ yarn-error.log*
 # Editor
 .vscode/
 .idea/
+.pylance-*/
 *.suo
 *.ntvs*
 *.njsproj
 *.sln
 *.sw?
+
+# Python
+__pycache__/
+*.pyc
 
 # OS
 .DS_Store
