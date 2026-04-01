@@ -14,13 +14,21 @@
 }
 
 .watch-right {
-  flex: 0.8;
   display: flex;
   flex-direction: column;
   background: var(--surface);
-  min-width: 340px;
-  max-width: 440px;
+  min-width: 280px;
+  max-width: 700px;
 }
+
+.watch-resizer {
+  width: 5px;
+  cursor: col-resize;
+  background: var(--border);
+  flex-shrink: 0;
+  transition: background 0.15s;
+}
+.watch-resizer:hover { background: var(--navy); }
 
 /* URL bar */
 .watch-url-bar {
@@ -301,6 +309,7 @@
 .watch-chat-input-row {
   display: flex;
   gap: 8px;
+  align-items: flex-end;
 }
 
 .watch-chat-input {
@@ -312,6 +321,12 @@
   color: var(--text);
   outline: none;
   font-size: var(--text-sm);
+  font-family: inherit;
+  resize: none;
+  overflow-y: auto;
+  min-height: 40px;
+  max-height: 160px;
+  line-height: 1.5;
 }
 .watch-chat-input:focus {
   border-color: var(--navy);
@@ -338,7 +353,8 @@
 
 @media (max-width: 900px) {
   .watch-layout { flex-direction: column; }
-  .watch-right { max-width: 100%; min-width: 0; max-height: 50vh; }
+  .watch-resizer { display: none; }
+  .watch-right { width: 100% !important; max-width: 100%; min-width: 0; max-height: 50vh; }
   .watch-url-input-group,
   .watch-url-actions { flex: 1 1 100%; }
   .watch-url-btn,

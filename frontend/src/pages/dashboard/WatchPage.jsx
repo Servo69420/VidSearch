@@ -40,23 +40,68 @@ async function sendMessageToAPI(videoId, messages) {
 }
 
 export default function WatchPage({ params }) {
-  const { recordVisit } = useHistory()
+  const { recordVisit, recordChat } = useHistory()
   const videoFromParams = params?.id ? ALL_VIDEOS.find(v => v.id === parseInt(params.id)) : null
   const defaultYoutubeId = videoFromParams?.youtubeId || 'aircAruvnKk'
   const defaultTitle = videoFromParams?.title || 'But what is a neural network? \u2014 3Blue1Brown'
 
-  const [urlInput, setUrlInput] = useState('')
-  const [videoId, setVideoId] = useState(defaultYoutubeId)
+  const [chatWidth, setChatWidth] = useState(400)
+  const isResizing = useRef(false)
+
+  function handleResizerMouseDown(e) {
+    isResizing.current = true
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+
+    function onMouseMove(e) {
+      if (!isResizing.current) return
+      const newWidth = window.innerWidth - e.clientX
+      setChatWidth(Math.min(700, Math.max(280, newWidth)))
+    }
+
+    function onMouseUp() {
+      isResizing.current = false
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+      window.removeEventListener('mousemove', onMouseMove)
+      window.removeEventListener('mouseup', onMouseUp)
+    }
+
+    window.addEventListener('mousemove', onMouseMove)
+    window.addEventListener('mouseup', onMouseUp)
+  }
+
+  const SESSION_KEY = 'watchpage_session'
+  const chatKey = (vid) => `watchChat_${vid}`
+
+  function loadChat(vid) {
+    try { return JSON.parse(localStorage.getItem(chatKey(vid))) ?? [WELCOME_MESSAGE] } catch { return [WELCOME_MESSAGE] }
+  }
+
+  const [urlInput, setUrlInput] = useState(() => {
+    if (videoFromParams) return ''
+    try { return JSON.parse(localStorage.getItem(SESSION_KEY))?.urlInput ?? '' } catch { return '' }
+  })
+  const [videoId, setVideoId] = useState(() => {
+    if (videoFromParams) return defaultYoutubeId
+    try { return JSON.parse(localStorage.getItem(SESSION_KEY))?.videoId ?? defaultYoutubeId } catch { return defaultYoutubeId }
+  })
   const [localVideoUrl, setLocalVideoUrl] = useState(null)
-  const [videoTitle, setVideoTitle] = useState(defaultTitle)
+  const [videoTitle, setVideoTitle] = useState(() => {
+    if (videoFromParams) return defaultTitle
+    try { return JSON.parse(localStorage.getItem(SESSION_KEY))?.videoTitle ?? defaultTitle } catch { return defaultTitle }
+  })
   const [urlError, setUrlError] = useState(false)
   const [chatInput, setChatInput] = useState('')
-  const [messages, setMessages] = useState([WELCOME_MESSAGE])
+  const [messages, setMessages] = useState(() => {
+    return loadChat(defaultYoutubeId)
+  })
   const [isLoading, setIsLoading] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
   const [uploadError, setUploadError] = useState('')
 
   const messagesEndRef = useRef(null)
+  const messagesContainerRef = useRef(null)
   const inputRef = useRef(null)
   const fileInputRef = useRef(null)
 
@@ -65,7 +110,17 @@ export default function WatchPage({ params }) {
   }, [params?.id])
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    try { localStorage.setItem(SESSION_KEY, JSON.stringify({ urlInput, videoId, videoTitle })) } catch {}
+  }, [videoId, videoTitle, urlInput])
+
+  useEffect(() => {
+    if (!videoId) return
+    try { localStorage.setItem(chatKey(videoId), JSON.stringify(messages)) } catch {}
+  }, [messages, videoId])
+
+  useEffect(() => {
+    const container = messagesContainerRef.current
+    if (container) container.scrollTop = container.scrollHeight
   }, [messages, isLoading])
 
   function handleLoadVideo() {
@@ -76,7 +131,7 @@ export default function WatchPage({ params }) {
       setVideoTitle('Video loaded')
       setUrlError(false)
       setUploadError('')
-      setMessages([WELCOME_MESSAGE])
+      setMessages(loadChat(id))
     } else {
       setUrlError(true)
     }
@@ -95,6 +150,7 @@ export default function WatchPage({ params }) {
     setMessages(updatedMessages)
     setChatInput('')
     setIsLoading(true)
+    recordChat(videoId)
 
     try {
       const reply = await sendMessageToAPI(videoId, updatedMessages)
@@ -217,8 +273,10 @@ export default function WatchPage({ params }) {
         </div>
       </div>
 
+      <div className="watch-resizer" onMouseDown={handleResizerMouseDown} />
+
       {/* Right panel - chat */}
-      <div className="watch-right">
+      <div className="watch-right" style={{ width: chatWidth, flex: 'none' }}>
         <div className="watch-chat-header">
           <div className="watch-chat-header-left">
             <div className="watch-chat-avatar">AI</div>
@@ -232,7 +290,7 @@ export default function WatchPage({ params }) {
           </div>
         </div>
 
-        <div className="watch-chat-messages">
+        <div className="watch-chat-messages" ref={messagesContainerRef}>
           {messages.map((msg, i) => (
             <div key={i} className={`watch-bubble-row ${msg.role}`}>
               {msg.role === 'assistant' && <div className="watch-bubble-avatar">AI</div>}
@@ -255,13 +313,18 @@ export default function WatchPage({ params }) {
         <div className="watch-chat-input-area">
           <div className="watch-chat-notice">Chat powered by AI — responses are contextual to the video.</div>
           <div className="watch-chat-input-row">
-            <input
+            <textarea
               ref={inputRef}
               className="watch-chat-input"
               value={chatInput}
-              onChange={e => setChatInput(e.target.value)}
+              onChange={e => {
+                setChatInput(e.target.value)
+                e.target.style.height = 'auto'
+                e.target.style.height = e.target.scrollHeight + 'px'
+              }}
               onKeyDown={handleChatKeyDown}
               placeholder="Ask about this video…"
+              rows={1}
             />
             <button
               className="watch-chat-send"

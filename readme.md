@@ -163,3 +163,6 @@ curl -X POST http://localhost:8000/auth/login \
 curl http://localhost:8000/auth/me \
   -H "Authorization: Bearer <token>"
 ```
+
+
+& "C:\Users\Tima\miniconda3\envs\VidSearchpy12\Library\bin\psql.exe" -h 127.0.0.1 -U Tima -d vidsearch -c "DROP TABLE   IF EXISTS users;"        

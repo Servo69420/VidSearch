@@ -9,7 +9,7 @@ import './DashboardPage.css'
 export default function DashboardPage() {
   const { user } = useAuth()
   const { totalCount, todayCount, isFavourite } = useWatchLater()
-  const { recentIds } = useHistory()
+  const { recentIds, videosExplainedCount } = useHistory()
   const stats = SAMPLE_USER_STATS
 
   function openFavourites() {
@@ -48,7 +48,7 @@ export default function DashboardPage() {
 
       {/* Stats */}
       <div className="dash-stats">
-        <StatCard label="Videos Explained" value={stats.videosExplained} change="+4 this week" changeType="positive" icon="&#9654;" />
+        <StatCard label="Videos Explained" value={videosExplainedCount} change={videosExplainedCount > 0 ? `${videosExplainedCount} total` : 'None yet'} changeType={videosExplainedCount > 0 ? 'positive' : 'neutral'} icon="&#9654;" />
         <StatCard label="Topics Covered" value={stats.topicsCovered} change="+1 new topic" changeType="positive" icon="&#9733;" />
         <div onClick={openFavourites} style={{ cursor: 'pointer' }}>
           <StatCard

@@ -16,6 +16,16 @@ export function HistoryProvider({ children }) {
     } catch { setEntries([]) }
   }, [key])
 
+  const chatKey = user?.id ? `videoChatted_${user.id}` : null
+  const [chattedIds, setChattedIds] = useState([])
+
+  useEffect(() => {
+    if (!chatKey) { setChattedIds([]); return }
+    try {
+      setChattedIds(JSON.parse(localStorage.getItem(chatKey) || '[]'))
+    } catch { setChattedIds([]) }
+  }, [chatKey])
+
   const recordVisit = useCallback((id) => {
     if (!key) return
     const numId = typeof id === 'string' ? parseInt(id) : id
@@ -28,12 +38,22 @@ export function HistoryProvider({ children }) {
     })
   }, [key])
 
+  const recordChat = useCallback((videoId) => {
+    if (!chatKey || !videoId) return
+    setChattedIds(prev => {
+      if (prev.includes(videoId)) return prev
+      const next = [...prev, videoId]
+      try { localStorage.setItem(chatKey, JSON.stringify(next)) } catch {}
+      return next
+    })
+  }, [chatKey])
+
   function recentIds(n = 5) {
     return entries.slice(0, n).map(e => e.id)
   }
 
   return (
-    <HistoryContext.Provider value={{ recordVisit, recentIds, entries }}>
+    <HistoryContext.Provider value={{ recordVisit, recentIds, entries, recordChat, videosExplainedCount: chattedIds.length }}>
       {children}
     </HistoryContext.Provider>
   )
