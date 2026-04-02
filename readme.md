@@ -10,6 +10,24 @@ Video search and analysis platform.
 - Node.js 18+
 - Python 3.11+
 - PostgreSQL 14+
+- FFmpeg (extract audio from vudeos uploaded by users)
+
+---
+
+## FFmpeg Setup (Windows)
+
+1. Download **ffmpeg-release-essentials.zip** from [gyan.dev/ffmpeg/builds](https://www.gyan.dev/ffmpeg/builds)
+2. Extract it (e.g. to `C:\Users\YourName\Desktop\ffmpegld`)
+3. Add the `bin` folder to PATH:
+   ```powershell
+   [Environment]::SetEnvironmentVariable("Path", $env:Path + ";C:\Users\YourName\Desktop\ffmpegld\bin", "User")
+   ```
+4. Restart your terminal and verify: `ffmpeg -version`
+
+> **Conda users:** If `ffmpeg` is not recognized after activating your env, run this in the terminal before starting:
+> ```powershell
+> $env:Path += ";C:\Users\YourName\Desktop\ffmpegld\bin"
+> ```
 
 ---
 
@@ -119,6 +137,9 @@ Interactive docs at `http://localhost:8000/docs`
 cd frontend
 npm install
 npm run dev
+
+#(you may need to install)
+npm install react-markdown remark-gfm        
 ```
 
 App runs at `http://localhost:5173`

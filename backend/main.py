@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from app.file_input import router as file_router
-from app import Chat
+from app import chat
 from app.database import connect, disconnect
 from app.routers import auth
 
@@ -36,7 +36,7 @@ app.add_middleware(
 )
 
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
-app.include_router(Chat.router, prefix="/chat", tags=["chat"])
+app.include_router(chat.router, prefix="/chat", tags=["chat"])
 app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
 
 
@@ -46,5 +46,4 @@ async def health():
 
 # & "C:\Users\Tima\miniconda3\envs\VidSearchpy12\Library\bin\pg_ctl.exe" -D "C:\Users\Tima\miniconda3\envs\VidSearchpy12\var\postgresql" start
 # C:\Users\Tima\miniconda3\envs\VidSearchpy12\Library\bin\pg_ctl.exe -D $env:PGDATA start
-# C:\Users\Tima\miniconda3\envs\VidSearchpy12\Library\bin\psql.exe -h
-# 127.0.0.1 -U Tima -d postgres
+# C:\Users\Tima\miniconda3\envs\VidSearchpy12\Library\bin\psql.exe -h 127.0.0.1 -U Tima -d postgres

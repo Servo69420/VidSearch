@@ -7,3 +7,8 @@ pydantic[email]
 pydantic-settings
 python-multipart
 httpx
+
+# For audio processing and transcription
+openai-whisper
+ffmpeg-python
+youtube-transcript-api
