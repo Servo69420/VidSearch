@@ -12,7 +12,8 @@ from asyncpg import Connection, UniqueViolationError
 from app.database import get_db
 from app.config import settings
 
-UPLOAD_DIR = Path(__file__).resolve().parent.parent.parent / "uploads" / "avatars"
+UPLOAD_DIR = Path(__file__).resolve().parent.parent.parent / \
+    "uploads" / "avatars"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 router = APIRouter()
@@ -32,13 +33,16 @@ class RegisterRequest(BaseModel):
     def empty_str_to_none(cls, v):
         return None if v == '' else v
 
+
 class LoginRequest(BaseModel):
     username: str
     password: str
 
+
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
+
 
 class ProfileUpdateRequest(BaseModel):
     name: Optional[str] = None
@@ -56,21 +60,32 @@ class ProfileUpdateRequest(BaseModel):
 def hash_password(password: str) -> str:
     return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
 
+
 def verify_password(password: str, hashed: str) -> bool:
     return bcrypt.checkpw(password.encode(), hashed.encode())
+
 
 def create_token(user_id: str, username: str) -> str:
     payload = {
         "sub": user_id,
         "username": username,
-        "exp": datetime.now(timezone.utc) + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES),
+        "exp": datetime.now(timezone.utc) + timedelta(
+            minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES
+        ),
     }
-    return jwt.encode(payload, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
+    return jwt.encode(
+        payload,
+        settings.JWT_SECRET,
+        algorithm=settings.JWT_ALGORITHM)
 
-def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+
+def get_current_user(
+        credentials: HTTPAuthorizationCredentials = Depends(security)):
     token = credentials.credentials
     try:
-        payload = jwt.decode(token, settings.JWT_SECRET, algorithms=[settings.JWT_ALGORITHM])
+        payload = jwt.decode(
+            token, settings.JWT_SECRET, algorithms=[
+                settings.JWT_ALGORITHM])
         return payload
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expired.")
@@ -85,11 +100,13 @@ async def register(body: RegisterRequest, db: Connection = Depends(get_db)):
     hashed = hash_password(body.password)
     try:
         await db.execute(
-            "INSERT INTO users (username, email, password_hash, hobbies) VALUES ($1, $2, $3, $4)",
+            "INSERT INTO users (username, email, password_hash, hobbies) "
+            "VALUES ($1, $2, $3, $4)",
             body.username, body.email, hashed, body.hobbies
         )
     except UniqueViolationError:
-        raise HTTPException(status_code=400, detail="Username or email already taken.")
+        raise HTTPException(status_code=400,
+                            detail="Username or email already taken.")
     return {"message": "Account created successfully."}
 
 
@@ -100,16 +117,19 @@ async def login(body: LoginRequest, db: Connection = Depends(get_db)):
         body.username
     )
     if not user or not verify_password(body.password, user["password_hash"]):
-        raise HTTPException(status_code=401, detail="Invalid username or password.")
+        raise HTTPException(status_code=401,
+                            detail="Invalid username or password.")
 
     token = create_token(str(user["id"]), user["username"])
     return {"access_token": token}
 
 
 @router.get("/me")
-async def me(current_user=Depends(get_current_user), db: Connection = Depends(get_db)):
+async def me(current_user=Depends(get_current_user),
+             db: Connection = Depends(get_db)):
     user = await db.fetchrow(
-        "SELECT id, username, email, name, surname, avatar_url, subscription, hobbies, created_at "
+        "SELECT id, username, email, name, surname, avatar_url, "
+        "subscription, hobbies, created_at "
         "FROM users WHERE id = $1::uuid",
         current_user["sub"]
     )
@@ -124,7 +144,9 @@ async def me(current_user=Depends(get_current_user), db: Connection = Depends(ge
         "avatar_url": user["avatar_url"] or "",
         "subscription": user["subscription"] or "free",
         "hobbies": list(user["hobbies"] or []),
-        "created_at": user["created_at"].isoformat() if user["created_at"] else None,
+        "created_at": (
+            user["created_at"].isoformat() if user["created_at"] else None
+        ),
     }
 
 
@@ -163,10 +185,14 @@ async def upload_avatar(
     db: Connection = Depends(get_db),
 ):
     if file.content_type not in ("image/jpeg", "image/png", "image/webp"):
-        raise HTTPException(status_code=400, detail="Only JPEG, PNG, or WebP images are allowed.")
+        raise HTTPException(
+            status_code=400,
+            detail="Only JPEG, PNG, or WebP images are allowed.")
     data = await file.read()
     if len(data) > 2 * 1024 * 1024:
-        raise HTTPException(status_code=400, detail="Image must be under 2 MB.")
+        raise HTTPException(
+            status_code=400,
+            detail="Image must be under 2 MB.")
     ext = file.content_type.split("/")[-1].replace("jpeg", "jpg")
     filename = f"{uuid.uuid4().hex}.{ext}"
     (UPLOAD_DIR / filename).write_bytes(data)
