@@ -1,30 +1,41 @@
 import { useAuth } from '../../contexts/AuthContext'
+import { useWatchLater } from '../../contexts/WatchLaterContext'
+import { useHistory } from '../../contexts/HistoryContext'
 import { ALL_VIDEOS, TOPICS, SAMPLE_USER_STATS } from '../../data/data'
 import StatCard from '../../components/ui/StatCard'
+import { navigate } from '../../router'
 import './DashboardPage.css'
-
-function sortByHobbies(videos, hobbies) {
-  return [...videos].sort((a, b) => {
-    const aMatch = hobbies.includes(a.subject) ? 1 : 0
-    const bMatch = hobbies.includes(b.subject) ? 1 : 0
-    return bMatch - aMatch
-  })
-}
 
 export default function DashboardPage() {
   const { user } = useAuth()
+  const { totalCount, todayCount, isFavourite } = useWatchLater()
+  const { recentIds, videosExplainedCount } = useHistory()
   const stats = SAMPLE_USER_STATS
 
-  const recommended = user?.hobbies
-    ? sortByHobbies(ALL_VIDEOS, user.hobbies).slice(0, 5)
-    : ALL_VIDEOS.slice(0, 5)
+  function openFavourites() {
+    sessionStorage.setItem('openFavourite', '1')
+    navigate('/browse')
+  }
+
+  function openTopic(label) {
+    sessionStorage.setItem('openTopic', label)
+    navigate('/browse')
+  }
+
+  const recentVideos = recentIds(5)
+    .map(id => ALL_VIDEOS.find(v => v.id === id))
+    .filter(Boolean)
+
+  const recommended = user?.hobbies?.length
+    ? ALL_VIDEOS.filter(v => user.hobbies.includes(v.subject)).slice(0, 10)
+    : []
 
   return (
     <div className="dash">
       {/* Welcome */}
       <div className="dash-welcome">
         <div className="dash-welcome-content">
-          <h2>Welcome back{user ? `, ${user.name}` : ''}!</h2>
+          <h2>Welcome back{user ? `, ${user.username}` : ''}!</h2>
           <p>
             {user?.hobbies?.length
               ? `Your recommendations are based on your ${user.hobbies.length} selected interest${user.hobbies.length !== 1 ? 's' : ''}.`
@@ -37,9 +48,17 @@ export default function DashboardPage() {
 
       {/* Stats */}
       <div className="dash-stats">
-        <StatCard label="Videos Explained" value={stats.videosExplained} change="+4 this week" changeType="positive" icon="&#9654;" />
+        <StatCard label="Videos Explained" value={videosExplainedCount} change={videosExplainedCount > 0 ? `${videosExplainedCount} total` : 'None yet'} changeType={videosExplainedCount > 0 ? 'positive' : 'neutral'} icon="&#9654;" />
         <StatCard label="Topics Covered" value={stats.topicsCovered} change="+1 new topic" changeType="positive" icon="&#9733;" />
-        <StatCard label="Watch Later" value={stats.watchLater} change="3 added today" changeType="neutral" icon="&#9201;" />
+        <div onClick={openFavourites} style={{ cursor: 'pointer' }}>
+          <StatCard
+            label="Watch Later"
+            value={totalCount}
+            change={todayCount > 0 ? `+${todayCount} added today` : 'None added today'}
+            changeType="neutral"
+            icon="&#9201;"
+          />
+        </div>
         <StatCard label="Learning Streak" value={`${stats.streak} days`} change="Personal best!" changeType="positive" icon="&#128293;" />
       </div>
 
@@ -52,22 +71,23 @@ export default function DashboardPage() {
             <a href="#/watched" className="dash-card-action">View all</a>
           </div>
           <div className="dash-card-body">
-            <div className="dash-video-list">
-              {ALL_VIDEOS.slice(0, 5).map(v => (
-                <a
-                  key={v.id}
-                  href={`#/watch/${v.id}`}
-                  className="dash-video-item"
-                >
-                  <div className={`dash-video-thumb ${v.color}`}>{v.icon}</div>
-                  <div className="dash-video-meta">
-                    <div className="dash-video-title">{v.title}</div>
-                    <div className="dash-video-info">{v.subject}</div>
-                  </div>
-                  <div className="dash-video-duration">{v.duration}</div>
-                </a>
-              ))}
-            </div>
+            {recentVideos.length === 0 ? (
+              <p className="dash-empty">No videos watched yet. <a href="#/browse">Browse videos</a></p>
+            ) : (
+              <div className="dash-video-list">
+                {recentVideos.map(v => (
+                  <a key={v.id} href={`#/watch/${v.id}`} className="dash-video-item">
+                    <div className={`dash-video-thumb ${v.color}`}>{v.icon}</div>
+                    <div className="dash-video-meta">
+                      <div className="dash-video-title">{v.title}</div>
+                      <div className="dash-video-info">{v.subject}</div>
+                    </div>
+                    <div className="dash-video-duration">{v.duration}</div>
+                    {isFavourite(v.id) && <span className="dash-video-fav">♥</span>}
+                  </a>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 
@@ -81,10 +101,14 @@ export default function DashboardPage() {
             <div className="dash-card-body">
               <div className="dash-topic-list">
                 {TOPICS.map((t, i) => (
-                  <a href="#/browse" className={`dash-topic-chip ${t.color}`} key={i}>
+                  <button
+                    key={i}
+                    className={`dash-topic-chip ${t.color}`}
+                    onClick={() => openTopic(t.label)}
+                  >
                     {t.label}
                     <span className="dash-topic-count">({t.count})</span>
-                  </a>
+                  </button>
                 ))}
               </div>
             </div>
@@ -96,6 +120,9 @@ export default function DashboardPage() {
               <a href="#/browse" className="dash-card-action">View all</a>
             </div>
             <div className="dash-card-body">
+              {recommended.length === 0 ? (
+                <p className="dash-empty">Select interests during sign-up to get recommendations. <a href="#/browse">Browse all videos</a></p>
+              ) : (
               <div className="dash-video-list">
                 {recommended.map(v => (
                   <a
@@ -112,6 +139,7 @@ export default function DashboardPage() {
                   </a>
                 ))}
               </div>
+              )}
             </div>
           </div>
         </div>

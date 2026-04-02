@@ -20,12 +20,22 @@ yarn-error.log*
 # Editor
 .vscode/
 .idea/
+.pylance-*/
 *.suo
 *.ntvs*
 *.njsproj
 *.sln
 *.sw?
 
+# Python
+__pycache__/
+*.pyc
+
 # OS
 .DS_Store
 Thumbs.db
+.uploads
+
+# Ignore uploaded avatar files
+upload/avatar/
+upload/avatar/**

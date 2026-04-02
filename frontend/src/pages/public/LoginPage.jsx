@@ -9,21 +9,20 @@ export default function LoginPage() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
 
-  function handleSubmit(e) {
+  const [submitting, setSubmitting] = useState(false)
+
+  async function handleSubmit(e) {
     e.preventDefault()
-    if (!username.trim()) {
-      setError('Please enter your username.')
-      return
-    }
-    if (!password.trim()) {
-      setError('Please enter your password.')
-      return
-    }
-    const ok = login(username.trim(), password.trim())
-    if (ok) {
+    if (!username.trim()) { setError('Please enter your username.'); return }
+    if (!password.trim()) { setError('Please enter your password.'); return }
+    setSubmitting(true)
+    try {
+      await login(username.trim(), password.trim())
       navigate('/dashboard')
-    } else {
-      setError('Invalid username or password. Try again or sign up.')
+    } catch (err) {
+      setError(err.message || 'Invalid username or password. Try again or sign up.')
+    } finally {
+      setSubmitting(false)
     }
   }
 
@@ -63,7 +62,9 @@ export default function LoginPage() {
 
           {error && <div className="auth-error">{error}</div>}
 
-          <button type="submit" className="auth-submit">Sign In</button>
+          <button type="submit" className="auth-submit" disabled={submitting}>
+            {submitting ? 'Signing in…' : 'Sign In'}
+          </button>
         </form>
 
         <div className="auth-footer">

@@ -18,21 +18,12 @@
   gap: 16px;
 }
 
-.watched-card-wrapper { position: relative; }
 
-.watched-progress {
-  height: 3px;
-  background: var(--border);
-  border-radius: 2px;
-  margin-top: -4px;
-  overflow: hidden;
+.watched-empty {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
 }
-.watched-progress-bar {
-  height: 100%;
-  background: var(--teal);
-  border-radius: 2px;
-  transition: width 0.3s;
-}
+.watched-empty a { color: var(--navy); text-decoration: underline; }
 
 @media (max-width: 1024px) { .watched-grid { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 640px) { .watched-grid { grid-template-columns: 1fr; } }

@@ -82,6 +82,28 @@
 }
 .auth-field input::placeholder { color: var(--text-muted); }
 
+.auth-password-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.auth-password-wrapper input {
+  width: 100%;
+  padding-right: 42px;
+}
+.auth-password-toggle {
+  position: absolute;
+  right: 10px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  font-size: 16px;
+  line-height: 1;
+  color: var(--text-muted);
+}
+.auth-password-toggle:hover { color: var(--text); }
+
 .auth-optional {
   font-weight: 400;
   color: var(--text-muted);

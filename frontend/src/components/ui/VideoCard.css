@@ -6,8 +6,15 @@
   cursor: pointer;
   transition: all var(--ease);
 }
-.vcard:hover { box-shadow: var(--shadow-md); transform: translateY(-2px); }
-.vcard-recommended { border-color: var(--gold); }
+
+.vcard:hover {
+  box-shadow: var(--shadow-md);
+  transform: translateY(-2px);
+}
+
+.vcard-recommended {
+  border-color: var(--gold);
+}
 
 .vcard-thumb {
   aspect-ratio: 16/9;
@@ -17,13 +24,38 @@
   position: relative;
 }
 
-.vcard-icon { font-size: 28px; opacity: 0.6; }
+.vcard-icon {
+  font-size: 28px;
+  opacity: 0.6;
+}
+
+.vcard-fav {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: rgba(0, 0, 0, 0.45);
+  border: none;
+  border-radius: 50%;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 16px;
+  color: white;
+  transition: background var(--ease), transform var(--ease);
+  line-height: 1;
+}
+.vcard-fav:hover { background: rgba(0,0,0,0.65); transform: scale(1.1); }
+.vcard-fav-active { background: rgba(220, 38, 38, 0.75); }
+.vcard-fav-active:hover { background: rgba(220, 38, 38, 0.9); }
 
 .vcard-duration {
   position: absolute;
   bottom: 8px;
   right: 8px;
-  background: rgba(0,0,0,0.6);
+  background: rgba(0, 0, 0, 0.6);
   color: white;
   font-size: 11px;
   font-weight: 600;
@@ -31,7 +63,9 @@
   border-radius: 4px;
 }
 
-.vcard-body { padding: 14px; }
+.vcard-body {
+  padding: 14px;
+}
 
 .vcard-subject {
   font-size: var(--text-xs);
@@ -48,9 +82,32 @@
 }
 
 /* Thumbnail colors */
-.thumb-navy   { background: var(--navy-100); color: var(--navy); }
-.thumb-teal   { background: var(--teal-100); color: var(--teal); }
-.thumb-gold   { background: var(--gold-100); color: var(--gold-dark); }
-.thumb-rose   { background: #ffe4e6; color: #9f1239; }
-.thumb-sky    { background: #e0f2fe; color: #0369a1; }
-.thumb-violet { background: #ede9fe; color: #7c3aed; }
+.thumb-navy {
+  background: var(--navy-100);
+  color: var(--navy);
+}
+
+.thumb-teal {
+  background: var(--teal-100);
+  color: var(--teal);
+}
+
+.thumb-gold {
+  background: var(--gold-100);
+  color: var(--gold-dark);
+}
+
+.thumb-rose {
+  background: #ffe4e6;
+  color: #9f1239;
+}
+
+.thumb-sky {
+  background: #e0f2fe;
+  color: #0369a1;
+}
+
+.thumb-violet {
+  background: #ede9fe;
+  color: #7c3aed;
+}

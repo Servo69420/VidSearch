@@ -87,6 +87,10 @@
   border-color: var(--navy);
 }
 
+.topic-btn-fav { color: #dc2626; border-color: #fca5a5; }
+.topic-btn-fav:hover { border-color: #dc2626; color: #dc2626; }
+.topic-btn-fav.active { background: #dc2626; border-color: #dc2626; color: white; }
+
 .browse-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
