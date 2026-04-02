@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react'
+import MarkdownMessage from './components/MarkdownMessage'
 import './ExplainPage.css'
 
 function parseYouTubeId(url) {
@@ -215,9 +216,12 @@ export default function ExplainPage() {
                 <div className="bubble-avatar">AI</div>
               )}
               <div className={`chat-bubble ${message.role}`}>
-                {message.text.split('\n\n').map((paragraph, paragraphIndex) => (
-                  <p key={paragraphIndex}>{paragraph}</p>
-                ))}
+                {message.role === 'assistant'
+                  ? <MarkdownMessage content={message.text} />
+                  : message.text.split('\n\n').map((paragraph, paragraphIndex) => (
+                      <p key={paragraphIndex}>{paragraph}</p>
+                    ))
+                }
               </div>
             </div>
           ))}

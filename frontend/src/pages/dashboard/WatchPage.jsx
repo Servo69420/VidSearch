@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { ALL_VIDEOS } from '../../data/data'
 import { useHistory } from '../../contexts/HistoryContext'
+import MarkdownMessage from '../../components/MarkdownMessage'
 import './WatchPage.css'
 
 function parseYouTubeId(url) {
@@ -295,7 +296,10 @@ export default function WatchPage({ params }) {
             <div key={i} className={`watch-bubble-row ${msg.role}`}>
               {msg.role === 'assistant' && <div className="watch-bubble-avatar">AI</div>}
               <div className={`watch-bubble ${msg.role}`}>
-                {msg.text.split('\n\n').map((para, j) => <p key={j}>{para}</p>)}
+                {msg.role === 'assistant'
+                  ? <MarkdownMessage content={msg.text} />
+                  : msg.text.split('\n\n').map((para, j) => <p key={j}>{para}</p>)
+                }
               </div>
             </div>
           ))}
