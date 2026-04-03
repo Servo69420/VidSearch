@@ -5,9 +5,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from app.file_input import router as file_router
-from app import chat
+from app.routers import chat
 from app.database import connect, disconnect
 from app.routers import auth
+from app.routers import transcription
+
 
 UPLOAD_DIR = Path(__file__).resolve().parent / "uploads"
 UPLOAD_DIR.mkdir(exist_ok=True)
@@ -43,6 +45,8 @@ app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
+app.include_router(transcription.router, prefix="/transcription", tags=["transcription"])
 
 # & "C:\Users\Tima\miniconda3\envs\VidSearchpy12\Library\bin\pg_ctl.exe" -D "C:\Users\Tima\miniconda3\envs\VidSearchpy12\var\postgresql" start
 # C:\Users\Tima\miniconda3\envs\VidSearchpy12\Library\bin\pg_ctl.exe -D $env:PGDATA start
