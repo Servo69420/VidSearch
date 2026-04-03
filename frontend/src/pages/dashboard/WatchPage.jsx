@@ -37,7 +37,34 @@ async function sendMessageToAPI(videoId, messages) {
     throw new Error(`API error: ${res.status}`)
   }
   const data = await res.json()
-  return data.choices[0].message.content
+  const msg = data.choices[0].message
+
+  // Return both text content and any tool calls
+  return {
+    text: msg.content || '',
+    toolCalls: msg.tool_calls || [],
+  }
+}
+
+// Load YouTube IFrame API script once
+function loadYouTubeAPI() {
+  return new Promise((resolve) => {
+    if (window.YT && window.YT.Player) {
+      resolve()
+      return
+    }
+    if (!document.getElementById('yt-iframe-api')) {
+      const tag = document.createElement('script')
+      tag.id = 'yt-iframe-api'
+      tag.src = 'https://www.youtube.com/iframe_api'
+      document.head.appendChild(tag)
+    }
+    const prev = window.onYouTubeIframeAPIReady
+    window.onYouTubeIframeAPIReady = () => {
+      prev?.()
+      resolve()
+    }
+  })
 }
 
 export default function WatchPage({ params }) {
@@ -48,6 +75,9 @@ export default function WatchPage({ params }) {
 
   const [chatWidth, setChatWidth] = useState(400)
   const isResizing = useRef(false)
+  const ytPlayerRef = useRef(null)
+  const ytReadyRef = useRef(false)
+  const ytContainerRef = useRef(null)
 
   function handleResizerMouseDown(e) {
     isResizing.current = true
@@ -124,6 +154,84 @@ export default function WatchPage({ params }) {
     if (container) container.scrollTop = container.scrollHeight
   }, [messages, isLoading])
 
+  // Initialize YouTube IFrame Player API
+  useEffect(() => {
+    if (!videoId || localVideoUrl) return
+    let cancelled = false
+    loadYouTubeAPI().then(() => {
+      if (cancelled || !ytContainerRef.current) return
+      // Destroy previous player if exists
+      if (ytPlayerRef.current) {
+        ytPlayerRef.current.destroy()
+        ytPlayerRef.current = null
+      }
+      ytReadyRef.current = false
+      ytPlayerRef.current = new window.YT.Player(ytContainerRef.current, {
+        videoId,
+        playerVars: { rel: 0, modestbranding: 1 },
+        events: {
+          onReady: () => { ytReadyRef.current = true },
+        },
+      })
+    })
+    return () => {
+      cancelled = true
+      if (ytPlayerRef.current) {
+        ytPlayerRef.current.destroy()
+        ytPlayerRef.current = null
+      }
+    }
+  }, [videoId, localVideoUrl])
+
+  function getLocalVideoEl() {
+    return document.querySelector('video.watch-embed')
+  }
+
+  function executeToolCalls(toolCalls) {
+    const yt = ytReadyRef.current ? ytPlayerRef.current : null
+
+    for (const call of toolCalls) {
+      const name = call.function?.name
+      const args = JSON.parse(call.function?.arguments || '{}')
+
+      if (name === 'play_video') {
+        if (localVideoUrl) {
+          getLocalVideoEl()?.play()
+        } else {
+          yt?.playVideo()
+        }
+      } else if (name === 'pause_video') {
+        if (localVideoUrl) {
+          getLocalVideoEl()?.pause()
+        } else {
+          yt?.pauseVideo()
+        }
+      } else if (name === 'seek_video') {
+        const seconds = args.seconds ?? 0
+        if (localVideoUrl) {
+          const el = getLocalVideoEl()
+          if (el) el.currentTime = seconds
+        } else {
+          yt?.seekTo(seconds, true)
+        }
+      } else if (name === 'mute_video') {
+        if (localVideoUrl) {
+          const el = getLocalVideoEl()
+          if (el) el.muted = true
+        } else {
+          yt?.mute()
+        }
+      } else if (name === 'unmute_video') {
+        if (localVideoUrl) {
+          const el = getLocalVideoEl()
+          if (el) el.muted = false
+        } else {
+          yt?.unMute()
+        }
+      }
+    }
+  }
+
   function handleLoadVideo() {
     const id = parseYouTubeId(urlInput.trim())
     if (id) {
@@ -154,8 +262,18 @@ export default function WatchPage({ params }) {
     recordChat(videoId)
 
     try {
-      const reply = await sendMessageToAPI(videoId, updatedMessages)
-      setMessages(prev => [...prev, { role: 'assistant', text: reply }])
+      const { text, toolCalls } = await sendMessageToAPI(videoId, updatedMessages)
+
+      // Execute any tool calls (play/pause)
+      if (toolCalls.length > 0) {
+        executeToolCalls(toolCalls)
+      }
+
+      // Show text reply, or a fallback describing the action
+      const replyText = text
+        || toolCalls.map(tc => `*${tc.function.name.replace('_', ' ')}*`).join(', ')
+        || 'Done.'
+      setMessages(prev => [...prev, { role: 'assistant', text: replyText }])
     } catch {
       setMessages(prev => [...prev, { role: 'assistant', text: 'Sorry, something went wrong. Please try again.' }])
     } finally {
@@ -250,13 +368,10 @@ export default function WatchPage({ params }) {
               controls
             />
           ) : (
-            <iframe
+            <div
               key={videoId}
+              ref={ytContainerRef}
               className="watch-embed"
-              src={`https://www.youtube.com/embed/${videoId}?rel=0&modestbranding=1`}
-              title="YouTube video"
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-              allowFullScreen
             />
           )}
         </div>
