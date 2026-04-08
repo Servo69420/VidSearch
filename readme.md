@@ -186,4 +186,6 @@ curl http://localhost:8000/auth/me \
 ```
 
 
-& "C:\Users\Tima\miniconda3\envs\VidSearchpy12\Library\bin\psql.exe" -h 127.0.0.1 -U Tima -d vidsearch -c "DROP TABLE   IF EXISTS users;"        
+IF could not start server AFTER & "C:\Users\Tima\miniconda3\envs\VidSearchpy12\Library\bin\pg_ctl.exe" -D "C:\Users\Tima\miniconda3\envs\VidSearchpy12\var\postgresql" start  
+THEN:
+& "C:\Users\Tima\miniconda3\envs\VidSearchpy12\Library\bin\psql.exe" -h 127.0.0.1 -p 5433 -U Tima -d vidsearch          
