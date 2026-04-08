@@ -49,6 +49,13 @@ CREATE TABLE IF NOT EXISTS transcriptions (
     )
 );
 
+-- Revoked JWT tokens (logout support)
+CREATE TABLE IF NOT EXISTS token_blacklist (
+    jti        UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    token      TEXT UNIQUE NOT NULL,
+    expires_at TIMESTAMPTZ NOT NULL
+);
+
 -- chat history with reference to user and videos
 CREATE TABLE IF NOT EXISTS chat_history (
     id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),

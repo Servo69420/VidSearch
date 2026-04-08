@@ -79,18 +79,26 @@ def create_token(user_id: str, username: str) -> str:
         algorithm=settings.JWT_ALGORITHM)
 
 
-def get_current_user(
-        credentials: HTTPAuthorizationCredentials = Depends(security)):
+async def get_current_user(
+        credentials: HTTPAuthorizationCredentials = Depends(security),
+        db: Connection = Depends(get_db)):
     token = credentials.credentials
     try:
         payload = jwt.decode(
             token, settings.JWT_SECRET, algorithms=[
                 settings.JWT_ALGORITHM])
-        return payload
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expired.")
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid token.")
+
+    revoked = await db.fetchval(
+        "SELECT 1 FROM token_blacklist WHERE token = $1", token
+    )
+    if revoked:
+        raise HTTPException(status_code=401, detail="Token has been revoked.")
+
+    return payload
 
 
 # --- Routes ---
@@ -202,3 +210,27 @@ async def upload_avatar(
         avatar_url, current_user["sub"]
     )
     return {"avatar_url": avatar_url}
+
+
+@router.post("/logout")
+async def logout(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: Connection = Depends(get_db),
+):
+    token = credentials.credentials
+    try:
+        payload = jwt.decode(
+            token, settings.JWT_SECRET, algorithms=[
+                settings.JWT_ALGORITHM])
+    except jwt.ExpiredSignatureError:
+        return {"message": "Token already expired."}
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Invalid token.")
+
+    expires_at = datetime.fromtimestamp(payload["exp"], tz=timezone.utc)
+    await db.execute(
+        "INSERT INTO token_blacklist (token, expires_at) VALUES ($1, $2) "
+        "ON CONFLICT (token) DO NOTHING",
+        token, expires_at
+    )
+    return {"message": "Logged out successfully."}
