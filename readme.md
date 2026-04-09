@@ -109,6 +109,88 @@ existing database, install pgvector first, then run the migration.
 - **Windows (conda):** `conda install -c conda-forge pgvector` inside your env
 - **From source:** see https://github.com/pgvector/pgvector#installation
 
+**Windows (conda-based Postgres — the setup used in this project):**
+
+If you installed PostgreSQL into a conda env (e.g. `VidSearchpy12`) via
+`conda install -c conda-forge postgresql`, the cleanest way to add pgvector
+is to install it into the same env:
+
+```powershell
+# 1. Activate the env that owns your Postgres install
+conda activate VidSearchpy12
+
+# 2. Install pgvector into the env (must match the env's Postgres version)
+conda install -c conda-forge pgvector
+
+# 3. Make sure the server is running. If it's not, start it:
+& "$env:CONDA_PREFIX\Library\bin\pg_ctl.exe" `
+    -D "$env:CONDA_PREFIX\var\postgresql" `
+    -l "$env:CONDA_PREFIX\var\postgresql\server.log" start
+
+# 4. Enable the extension inside the vidsearch DB
+& "$env:CONDA_PREFIX\Library\bin\psql.exe" -h 127.0.0.1 -p 5433 -U Tima -d vidsearch `
+    -c "CREATE EXTENSION IF NOT EXISTS vector;"
+
+# 5. Apply the full schema (idempotent — safe to re-run)
+& "$env:CONDA_PREFIX\Library\bin\psql.exe" -h 127.0.0.1 -p 5433 -U Tima -d vidsearch `
+    -f .\backend\schema.sql
+```
+
+> Replace `-p 5433` and `-U Tima` with whatever port/user your local
+> Postgres was initialized with. If you're not sure, check the
+> `DATABASE_URL` in your `backend/.env`.
+
+**Windows (native Postgres installer from EDB):**
+
+If you installed Postgres via the official installer (not conda), pgvector
+isn't bundled — you have to build it with MSVC:
+
+```powershell
+# 1. Open "x64 Native Tools Command Prompt for VS 2022" (not regular PowerShell)
+# 2. Point nmake at your Postgres install
+set "PGROOT=C:\Program Files\PostgreSQL\14"
+
+# 3. Clone and build
+git clone --branch v0.7.4 https://github.com/pgvector/pgvector.git
+cd pgvector
+nmake /F Makefile.win
+nmake /F Makefile.win install
+```
+
+Then, in `psql` connected to `vidsearch`:
+
+```sql
+CREATE EXTENSION IF NOT EXISTS vector;
+```
+
+And apply the schema:
+
+```powershell
+& "C:\Program Files\PostgreSQL\14\bin\psql.exe" -U postgres -d vidsearch -f .\backend\schema.sql
+```
+
+**Updating an existing Windows DB (already has old `transcriptions` table):**
+
+`CREATE TABLE IF NOT EXISTS` will *not* add the new `status` column to an
+existing `transcriptions` table. Run this once after enabling the extension:
+
+```sql
+\c vidsearch
+ALTER TABLE transcriptions
+  ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'pending'
+  CHECK (status IN ('pending', 'chunking', 'summarizing', 'ready', 'failed'));
+```
+
+**Verify the install:**
+
+```powershell
+& "$env:CONDA_PREFIX\Library\bin\psql.exe" -h 127.0.0.1 -p 5433 -U Tima -d vidsearch -c "\dx vector"
+& "$env:CONDA_PREFIX\Library\bin\psql.exe" -h 127.0.0.1 -p 5433 -U Tima -d vidsearch -c "\d transcript_chunks"
+```
+
+You should see the `vector` extension listed and `transcript_chunks` with
+`embedding vector(384)` and `summary_embedding vector(384)` columns.
+
 **Migrate an existing DB:**
 
 ```sql
