@@ -93,7 +93,7 @@ async def ask(request: Chatrequest):
                 "'pause it', 'mute', 'skip to 2:30'). "
                 "For any other message — questions, greetings, "
                 "conversation — respond with normal text and "
-                "do NOT call any tool."
+                "call tools to assist with the explanation."
             ),
         }
     ]
