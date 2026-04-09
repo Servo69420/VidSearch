@@ -97,6 +97,56 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS subscription TEXT DEFAULT 'free';
 ALTER TABLE users ADD COLUMN IF NOT EXISTS hobbies TEXT[] DEFAULT '{}';
 ```
 
+### pgvector + transcript chunks (3-pass summary feature)
+
+The schema now requires the `pgvector` extension and adds a `transcript_chunks`
+table plus a `status` column on `transcriptions`. If you're updating an
+existing database, install pgvector first, then run the migration.
+
+**Install pgvector:**
+
+- **Ubuntu/Debian:** `sudo apt install postgresql-14-pgvector` (match your PG version)
+- **Windows (conda):** `conda install -c conda-forge pgvector` inside your env
+- **From source:** see https://github.com/pgvector/pgvector#installation
+
+**Migrate an existing DB:**
+
+```sql
+\c vidsearch
+CREATE EXTENSION IF NOT EXISTS vector;
+
+ALTER TABLE transcriptions
+  ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'pending'
+  CHECK (status IN ('pending', 'chunking', 'summarizing', 'ready', 'failed'));
+
+CREATE TABLE IF NOT EXISTS transcript_chunks (
+    id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    transcription_id  UUID NOT NULL REFERENCES transcriptions(id) ON DELETE CASCADE,
+    idx               INT NOT NULL,
+    start_s           REAL NOT NULL,
+    end_s             REAL NOT NULL,
+    text              TEXT NOT NULL,
+    summary           TEXT,
+    role              TEXT,
+    keywords          TEXT[] DEFAULT '{}',
+    embedding         VECTOR(384),
+    summary_embedding VECTOR(384),
+    created_at        TIMESTAMPTZ DEFAULT now(),
+    UNIQUE (transcription_id, idx)
+);
+
+CREATE INDEX IF NOT EXISTS transcript_chunks_transcription_idx
+    ON transcript_chunks (transcription_id, idx);
+CREATE INDEX IF NOT EXISTS transcript_chunks_embedding_idx
+    ON transcript_chunks USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
+CREATE INDEX IF NOT EXISTS transcript_chunks_summary_embedding_idx
+    ON transcript_chunks USING ivfflat (summary_embedding vector_cosine_ops) WITH (lists = 100);
+```
+
+> If you later switch embedding models, change `VECTOR(384)` to match the new
+> model's dimension (e.g. 1536 for OpenAI `text-embedding-3-small`) and
+> re-create the table.
+
 ---
 
 ## Backend
