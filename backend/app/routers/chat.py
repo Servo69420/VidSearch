@@ -88,8 +88,8 @@ async def ask(request: Chatrequest):
                 "You are a helpful assistant that answers questions "
                 "about the content of the video. "
                 "IMPORTANT: By default, respond with text. "
-                "ONLY use a tool when the user EXPLICITLY asks to "
-                "control the video player (e.g. 'play the video', "
+                "When explaining the video content, you can also use the following tools to "
+                "control the video player together with the explanation (e.g. 'play the video', "
                 "'pause it', 'mute', 'skip to 2:30'). "
                 "For any other message — questions, greetings, "
                 "conversation — respond with normal text and "
@@ -110,7 +110,7 @@ async def ask(request: Chatrequest):
                     "content-type": "application/json",
                 },
                 json={
-                    "model": "google/gemini-2.5-flash",
+                    "model": "google/gemma-4-31b-it",
                     "messages": openai_messages,
                     "tools": VIDEO_PLAYER_TOOLS,
                 },
