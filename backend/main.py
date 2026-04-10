@@ -10,7 +10,7 @@ from app.routers import chat
 from app.database import connect, disconnect
 from app.routers import auth
 from app.routers import transcription
-from app.models.background_tasks import TokenCleanupTaskfrom
+from app.models.background_tasks import TokenCleanupTask
 from app.routers import chat_history
 
 
