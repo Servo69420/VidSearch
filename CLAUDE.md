@@ -75,15 +75,49 @@ Backend reads from a `.env` file (not committed). Expected keys include:
 - Key tables: `users`, `yt_videos`, `user_videos`, `transcriptions`, `chat_history`
 - `transcriptions` stores segments as JSONB
 
-## Coursework Context
-This project is also a university OOP coursework submission. The following OOP requirements
-must be clearly demonstrated in the code:
-- All 4 OOP pillars: Encapsulation, Abstraction, Inheritance, Polymorphism
-- At least 1 explicit design pattern (Factory Method preferred)
-- Composition and/or Aggregation in custom classes
-- File I/O: CSV export and/or TXT import (not just binary uploads)
+## Coursework Requirements (OOP Coursework 2026)
 
-Key files being added for coursework: `backend/app/models/` directory with proper class hierarchy.
+This project is a university OOP coursework submission.
+
+### Functional Requirements (all mandatory)
+
+| # | Requirement | Status | Notes |
+|---|-------------|--------|-------|
+| 1 | **GitHub usage** | Done | Repo already on GitHub |
+| 2 | **PEP 8 code style** | Partial | Verify with linter before submission |
+| 3 | **4 OOP pillars** | TODO | Must demonstrate **Encapsulation**, **Abstraction**, **Inheritance**, **Polymorphism** in code. Each must be explained in the report with code snippets |
+| 4 | **Composition and/or Aggregation** | TODO | Custom classes must show has-a relationships. Explain in report |
+| 5 | **At least 1 design pattern** | TODO | Pick from: Singleton, Factory Method, Abstract Factory, Builder, Prototype, Adapter, Composite, Decorator. Must explain why it fits the project |
+| 6 | **File I/O (read & write)** | TODO | Import/export data via TXT, CSV, or similar. Not just binary uploads — must be structured text files (e.g., CSV export of transcriptions, TXT import of config) |
+| 7 | **Unit tests** | TODO | Use Python `unittest` framework. Cover core functionality |
+| 8 | **Report (Markdown)** | TODO | See report structure below |
+
+### Report Structure (Markdown file, English or Lithuanian)
+
+1. **Introduction** — What is the app? How to run it? How to use it?
+2. **Body/Analysis** — How the code meets each functional requirement. Use code snippets
+3. **Results** — 3-5 bullet points on outcomes and challenges
+4. **Conclusions** — Key findings, what was achieved, future prospects
+5. *(Optional)* Resources and references
+
+### Evaluation Breakdown
+
+- **Code requirements (items 1-7)**: 70% (2.1 points)
+- **Report + presentation**: 30% (0.9 points)
+- **Total**: 3 points
+
+### Implementation Plan for OOP Requirements
+
+Key files: `backend/app/models/` directory with proper class hierarchy.
+
+- **Encapsulation**: Private attributes with property accessors in model classes
+- **Abstraction**: Abstract base classes (ABC) defining interfaces for services
+- **Inheritance**: Class hierarchy (e.g., BaseVideo -> YouTubeVideo / UploadedVideo)
+- **Polymorphism**: Method overriding in subclasses (e.g., different transcription strategies)
+- **Design pattern**: Factory Method for creating video/transcription objects based on source type
+- **Composition/Aggregation**: e.g., Transcription *has* Segments, User *has* Videos
+- **File I/O**: CSV export of transcription data, TXT import for batch processing
+- **Tests**: `unittest` test cases for model classes, factory, and file I/O
 
 ## Conventions
 - All backend routes are async

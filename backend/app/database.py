@@ -14,6 +14,10 @@ async def disconnect():
         await _pool.close()
 
 
+def get_pool() -> asyncpg.Pool:
+    return _pool
+
+
 async def get_db():
     async with _pool.acquire() as connection:
         yield connection
