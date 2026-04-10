@@ -262,6 +262,17 @@ export default function WatchPage({ params }) {
       setUrlError(false)
       setUploadError('')
       setMessages([WELCOME_MESSAGE])
+
+      // Trigger transcription in the background
+      const token = localStorage.getItem('auth_token')
+      fetch('http://localhost:8000/transcription/url', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ url: urlInput.trim() }),
+      }).catch(() => {})
     } else {
       setUrlError(true)
     }
