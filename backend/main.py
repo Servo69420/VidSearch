@@ -1,3 +1,4 @@
+import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -9,6 +10,7 @@ from app.routers import chat
 from app.database import connect, disconnect
 from app.routers import auth
 from app.routers import transcription
+from app.models.background_tasks import TokenCleanupTaskfrom
 from app.routers import chat_history
 
 
@@ -19,7 +21,9 @@ UPLOAD_DIR.mkdir(exist_ok=True)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await connect()
+    cleanup_task = asyncio.create_task(TokenCleanupTask().run_forever())
     yield
+    cleanup_task.cancel()
     await disconnect()
 
 

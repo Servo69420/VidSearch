@@ -3,14 +3,12 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, EmailStr, field_validator
 from typing import Optional
 from pathlib import Path
-import bcrypt
-import jwt
 import uuid
-from datetime import datetime, timedelta, timezone
-from asyncpg import Connection, UniqueViolationError
+from asyncpg import Connection
 
 from app.database import get_db
-from app.config import settings
+from app.models.user import User
+from app.models.auth_service import AuthService
 
 UPLOAD_DIR = Path(__file__).resolve().parent.parent.parent / \
     "uploads" / "avatars"
@@ -18,6 +16,7 @@ UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 router = APIRouter()
 security = HTTPBearer()
+auth_service = AuthService()
 
 
 # --- Schemas ---
@@ -55,107 +54,42 @@ class ProfileUpdateRequest(BaseModel):
         return None if v == '' else v
 
 
-# --- Helpers ---
-
-def hash_password(password: str) -> str:
-    return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
-
-
-def verify_password(password: str, hashed: str) -> bool:
-    return bcrypt.checkpw(password.encode(), hashed.encode())
-
-
-def create_token(user_id: str, username: str) -> str:
-    payload = {
-        "sub": user_id,
-        "username": username,
-        "exp": datetime.now(timezone.utc) + timedelta(
-            minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES
-        ),
-    }
-    return jwt.encode(
-        payload,
-        settings.JWT_SECRET,
-        algorithm=settings.JWT_ALGORITHM)
-
+# --- Dependencies ---
 
 async def get_current_user(
         credentials: HTTPAuthorizationCredentials = Depends(security),
         db: Connection = Depends(get_db)):
-    token = credentials.credentials
-    try:
-        payload = jwt.decode(
-            token, settings.JWT_SECRET, algorithms=[
-                settings.JWT_ALGORITHM])
-    except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="Token expired.")
-    except jwt.InvalidTokenError:
-        raise HTTPException(status_code=401, detail="Invalid token.")
-
-    revoked = await db.fetchval(
-        "SELECT 1 FROM token_blacklist WHERE token = $1", token
-    )
-    if revoked:
-        raise HTTPException(status_code=401, detail="Token has been revoked.")
-
-    return payload
+    return await auth_service.get_current_user(credentials.credentials, db)
 
 
 # --- Routes ---
 
 @router.post("/register", status_code=status.HTTP_201_CREATED)
 async def register(body: RegisterRequest, db: Connection = Depends(get_db)):
-    hashed = hash_password(body.password)
-    try:
-        await db.execute(
-            "INSERT INTO users (username, email, password_hash, hobbies) "
-            "VALUES ($1, $2, $3, $4)",
-            body.username, body.email, hashed, body.hobbies
-        )
-    except UniqueViolationError:
-        raise HTTPException(status_code=400,
-                            detail="Username or email already taken.")
-    return {"message": "Account created successfully."}
+    return await auth_service.register(
+        body.username, body.email, body.password, body.hobbies, db
+    )
 
 
 @router.post("/login", response_model=TokenResponse)
 async def login(body: LoginRequest, db: Connection = Depends(get_db)):
-    user = await db.fetchrow(
-        "SELECT id, username, password_hash FROM users WHERE username = $1",
-        body.username
-    )
-    if not user or not verify_password(body.password, user["password_hash"]):
-        raise HTTPException(status_code=401,
-                            detail="Invalid username or password.")
-
-    token = create_token(str(user["id"]), user["username"])
+    token = await auth_service.authenticate(body.username, body.password, db)
     return {"access_token": token}
 
 
 @router.get("/me")
 async def me(current_user=Depends(get_current_user),
              db: Connection = Depends(get_db)):
-    user = await db.fetchrow(
+    row = await db.fetchrow(
         "SELECT id, username, email, name, surname, avatar_url, "
         "subscription, hobbies, created_at "
         "FROM users WHERE id = $1::uuid",
         current_user["sub"]
     )
-    if not user:
+    if not row:
         raise HTTPException(status_code=401, detail="User not found.")
-    return {
-        "id": str(user["id"]),
-        "username": user["username"],
-        "email": user["email"],
-        "name": user["name"] or "",
-        "surname": user["surname"] or "",
-        "avatar_url": user["avatar_url"] or "",
-        "subscription": user["subscription"] or "free",
-        "hobbies": list(user["hobbies"] or []),
-        "created_at": (
-            user["created_at"].isoformat() if user["created_at"] else None
-        ),
-    }
+    user = User.from_db_row(row)
+    return user.to_dict()
 
 
 @router.put("/profile")
@@ -164,6 +98,8 @@ async def update_profile(
     current_user=Depends(get_current_user),
     db: Connection = Depends(get_db),
 ):
+    from asyncpg import UniqueViolationError
+
     fields = []
     values = []
     idx = 1
@@ -217,20 +153,4 @@ async def logout(
     credentials: HTTPAuthorizationCredentials = Depends(security),
     db: Connection = Depends(get_db),
 ):
-    token = credentials.credentials
-    try:
-        payload = jwt.decode(
-            token, settings.JWT_SECRET, algorithms=[
-                settings.JWT_ALGORITHM])
-    except jwt.ExpiredSignatureError:
-        return {"message": "Token already expired."}
-    except jwt.InvalidTokenError:
-        raise HTTPException(status_code=401, detail="Invalid token.")
-
-    expires_at = datetime.fromtimestamp(payload["exp"], tz=timezone.utc)
-    await db.execute(
-        "INSERT INTO token_blacklist (token, expires_at) VALUES ($1, $2) "
-        "ON CONFLICT (token) DO NOTHING",
-        token, expires_at
-    )
-    return {"message": "Logged out successfully."}
+    return await auth_service.logout(credentials.credentials, db)
