@@ -110,7 +110,7 @@ async def ask(request: Chatrequest):
                     "content-type": "application/json",
                 },
                 json={
-                    "model": "google/gemma-4-31b-it",
+                    "model": "google/gemma-4-31b-it", #google/gemma-4-31b-it
                     "messages": openai_messages,
                     "tools": VIDEO_PLAYER_TOOLS,
                 },
