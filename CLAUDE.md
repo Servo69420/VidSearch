@@ -127,5 +127,3 @@ Key files: `backend/app/models/` directory with proper class hierarchy.
 
 ## Frontend Changes
 All edits to files under `frontend/` require explicit user approval before applying. Show the proposed change and wait for confirmation.
-Merge practise
-aaaaa
