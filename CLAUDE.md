@@ -124,3 +124,7 @@ Key files: `backend/app/models/` directory with proper class hierarchy.
 - Dependencies injected via FastAPI `Depends()` — `get_db` and `get_current_user`
 - File uploads stored under `backend/uploads/`
 - CORS allowed for `localhost:5173` and `localhost:5174`
+
+## Frontend Changes
+All edits to files under `frontend/` require explicit user approval before applying. Show the proposed change and wait for confirmation.
+

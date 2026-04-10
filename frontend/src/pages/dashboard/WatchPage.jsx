@@ -22,10 +22,24 @@ const WELCOME_MESSAGE = {
   text: 'Hi! Paste a YouTube link above and I\'ll help you understand the video. You can ask me anything about its content.',
 }
 
+async function loadHistoryFromAPI(videoId) {
+  const token = localStorage.getItem('auth_token')
+  if (!token || !videoId) return null
+  const res = await fetch(`http://localhost:8000/chat-history/${videoId}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) return null
+  const rows = await res.json()
+  return rows.map(r => ({ role: r.role, text: r.content }))
+}
+
 async function sendMessageToAPI(videoId, messages) {
   const res = await fetch('http://localhost:8000/chat/ask', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${localStorage.getItem('auth_token')}`,
+    },
     body: JSON.stringify({
       video_id: videoId,
       message: messages
@@ -141,6 +155,13 @@ export default function WatchPage({ params }) {
   }, [params?.id])
 
   useEffect(() => {
+    if (!videoId) return
+    loadHistoryFromAPI(videoId).then(history => {
+      setMessages(history?.length ? history : [WELCOME_MESSAGE])
+    })
+  }, [videoId])
+
+  useEffect(() => {
     try { localStorage.setItem(SESSION_KEY, JSON.stringify({ urlInput, videoId, videoTitle })) } catch {}
   }, [videoId, videoTitle, urlInput])
 
@@ -240,7 +261,7 @@ export default function WatchPage({ params }) {
       setVideoTitle('Video loaded')
       setUrlError(false)
       setUploadError('')
-      setMessages(loadChat(id))
+      setMessages([WELCOME_MESSAGE])
     } else {
       setUrlError(true)
     }

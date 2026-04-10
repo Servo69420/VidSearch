@@ -117,7 +117,7 @@ async def ask(
                     "content-type": "application/json",
                 },
                 json={
-                    "model": "google/gemma-4-31b-it", #google/gemma-4-31b-it
+                    "model": "google/gemma-4-26b-a4b-it", #google/gemma-4-31b-it
                     "messages": openai_messages,
                     "tools": VIDEO_PLAYER_TOOLS,
                 },
@@ -134,31 +134,52 @@ async def ask(
                 )
             data = result.json()
 
-            is_yt = await db.fetchval(
-                "SELECT 1 FROM yt_videos WHERE id = $1::uuid", request.video_id
-            )
-            video_id = request.video_id if is_yt else None
-            user_video_id = None if is_yt else request.video_id
+            import uuid as _uuid
+            def is_uuid(val):
+                try:
+                    _uuid.UUID(val)
+                    return True
+                except (ValueError, AttributeError):
+                    return False
+
             user_id = current_user["sub"]
+
+            if is_uuid(request.video_id):
+                video_id = None
+                user_video_id = request.video_id
+            else:
+                # YouTube ID — upsert into yt_videos so we always have a UUID
+                yt_uuid = await db.fetchval(
+                    """INSERT INTO yt_videos (source_type, source_url)
+                       VALUES ('youtube', $1)
+                       ON CONFLICT (source_url) DO UPDATE SET source_url = EXCLUDED.source_url
+                       RETURNING id""",
+                    f"https://www.youtube.com/watch?v={request.video_id}",
+                )
+                video_id = str(yt_uuid)
+                user_video_id = None
+
+            can_save = True
 
             user_message = next(
                 (m["content"] for m in reversed(request.message) if m["role"] == "user"),
                 None,
             )
-            if user_message:
+            if can_save and user_message:
                 await db.execute(
                     """INSERT INTO chat_history (user_id, video_id, user_video_id, role, content)
                     VALUES ($1::uuid, $2::uuid, $3::uuid, 'user', $4)""",
                     user_id, video_id, user_video_id, user_message,
                 )
-            
+
             assistant_message = data["choices"][0]["message"].get("content")
-            if assistant_message:
+            if can_save and assistant_message:
                 await db.execute(
                     """INSERT INTO chat_history (user_id, video_id, user_video_id, role, content)
                     VALUES ($1::uuid, $2::uuid, $3::uuid, 'assistant', $4)""",
                     user_id, video_id, user_video_id, assistant_message,
                 )
+            return data
         except httpx.TimeoutException:
             print(
                 "Error: The request to OpenRouter API timed out "

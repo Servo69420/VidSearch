@@ -20,7 +20,7 @@ async def transcribe_video_yt(url: str, db) -> dict:
         raise ValueError("Invalid YouTube URL")
 
     existing = await db.fetchrow(
-        "SELECT t.* FROM transcriptions t JOIN videos v ON t.video_id = v.id WHERE v.source_url = $1", url
+        "SELECT t.* FROM transcriptions t JOIN yt_videos v ON t.video_id = v.id WHERE v.source_url = $1", url
     )
     if existing:
         return dict(existing)
@@ -31,7 +31,7 @@ async def transcribe_video_yt(url: str, db) -> dict:
     segments = [{ "start": e.start, "end": e.start + e.duration, "text": e.text } for e in transcript]
 
     video = await db.fetchrow(
-        "INSERT INTO videos (source_type, source_url) VALUES ('url', $1) ON CONFLICT (source_url) DO UPDATE SET source_url = EXCLUDED.source_url RETURNING *", url
+        "INSERT INTO yt_videos (source_type, source_url) VALUES ('url', $1) ON CONFLICT (source_url) DO UPDATE SET source_url = EXCLUDED.source_url RETURNING *", url
     )
 
     row = await db.fetchrow(

@@ -10,7 +10,9 @@ from app.routers import chat
 from app.database import connect, disconnect
 from app.routers import auth
 from app.routers import transcription
-from app.models.background_tasks import TokenCleanupTask
+from app.models.background_tasks import TokenCleanupTaskfrom
+from app.routers import chat_history
+
 
 UPLOAD_DIR = Path(__file__).resolve().parent / "uploads"
 UPLOAD_DIR.mkdir(exist_ok=True)
@@ -43,7 +45,7 @@ app.add_middleware(
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
 app.include_router(chat.router, prefix="/chat", tags=["chat"])
 app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
-
+app.include_router(chat_history.router, prefix="/chat-history", tags=["chat-history"])
 
 @app.get("/health")
 async def health():
