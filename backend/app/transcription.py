@@ -31,7 +31,7 @@ async def transcribe_video_yt(url: str, db) -> dict:
     segments = [{ "start": e.start, "end": e.start + e.duration, "text": e.text } for e in transcript]
 
     video = await db.fetchrow(
-        "INSERT INTO yt_videos (source_type, source_url) VALUES ('url', $1) ON CONFLICT (source_url) DO UPDATE SET source_url = EXCLUDED.source_url RETURNING *", url
+        "INSERT INTO yt_videos (source_type, source_url) VALUES ('youtube', $1) ON CONFLICT (source_url) DO UPDATE SET source_url = EXCLUDED.source_url RETURNING *", url
     )
 
     row = await db.fetchrow(
