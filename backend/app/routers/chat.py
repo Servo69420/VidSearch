@@ -1,7 +1,10 @@
 import httpx
-from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from app.config import settings
+from fastapi import APIRouter, HTTPException, Depends
+from app.routers.auth import get_current_user
+from app.database import get_db
+
 
 router = APIRouter()
 
@@ -80,7 +83,11 @@ class Chatrequest(BaseModel):
 
 
 @router.post("/ask")
-async def ask(request: Chatrequest):
+async def ask(
+    request: Chatrequest,
+    current_user=Depends(get_current_user),
+    db=Depends(get_db),
+):
     openai_messages = [
         {
             "role": "system",
@@ -125,7 +132,33 @@ async def ask(request: Chatrequest):
                     status_code=502,
                     detail="Error from AI provider.",
                 )
-            return result.json()
+            data = result.json()
+
+            is_yt = await db.fetchval(
+                "SELECT 1 FROM yt_videos WHERE id = $1::uuid", request.video_id
+            )
+            video_id = request.video_id if is_yt else None
+            user_video_id = None if is_yt else request.video_id
+            user_id = current_user["sub"]
+
+            user_message = next(
+                (m["content"] for m in reversed(request.message) if m["role"] == "user"),
+                None,
+            )
+            if user_message:
+                await db.execute(
+                    """INSERT INTO chat_history (user_id, video_id, user_video_id, role, content)
+                    VALUES ($1::uuid, $2::uuid, $3::uuid, 'user', $4)""",
+                    user_id, video_id, user_video_id, user_message,
+                )
+            
+            assistant_message = data["choices"][0]["message"].get("content")
+            if assistant_message:
+                await db.execute(
+                    """INSERT INTO chat_history (user_id, video_id, user_video_id, role, content)
+                    VALUES ($1::uuid, $2::uuid, $3::uuid, 'assistant', $4)""",
+                    user_id, video_id, user_video_id, assistant_message,
+                )
         except httpx.TimeoutException:
             print(
                 "Error: The request to OpenRouter API timed out "
