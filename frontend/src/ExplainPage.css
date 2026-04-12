@@ -186,6 +186,8 @@
 }
 .segment-chip:hover { background: var(--accent-light); color: var(--accent); border-color: #c7d2fe; }
 .segment-chip.segment-active { background: var(--accent-light); color: var(--accent); border-color: #c7d2fe; font-weight: 600; }
+[data-theme="dark"] .segment-chip:hover,
+[data-theme="dark"] .segment-chip.segment-active { border-color: rgba(99, 102, 241, 0.4); }
 
 /* ── Right — chat panel ── */
 .explain-right {

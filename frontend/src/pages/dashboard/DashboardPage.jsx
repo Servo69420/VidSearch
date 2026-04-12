@@ -1,6 +1,8 @@
+import { useMemo } from 'react'
 import { useAuth } from '../../contexts/AuthContext'
 import { useWatchLater } from '../../contexts/WatchLaterContext'
 import { useHistory } from '../../contexts/HistoryContext'
+import { useUserVideos } from '../../contexts/UserVideosContext'
 import { ALL_VIDEOS, TOPICS, SAMPLE_USER_STATS } from '../../data/data'
 import StatCard from '../../components/ui/StatCard'
 import { navigate } from '../../router'
@@ -9,7 +11,8 @@ import './DashboardPage.css'
 export default function DashboardPage() {
   const { user } = useAuth()
   const { totalCount, todayCount, isFavourite } = useWatchLater()
-  const { recentIds, videosExplainedCount } = useHistory()
+  const { entries, videosExplainedCount } = useHistory()
+  const { userVideos } = useUserVideos()
   const stats = SAMPLE_USER_STATS
 
   function openFavourites() {
@@ -22,9 +25,35 @@ export default function DashboardPage() {
     navigate('/browse')
   }
 
-  const recentVideos = recentIds(5)
-    .map(id => ALL_VIDEOS.find(v => v.id === id))
-    .filter(Boolean)
+  function openMyVideos() {
+    sessionStorage.setItem('openMyVideos', '1')
+    navigate('/browse')
+  }
+
+  // Merge library history + personal videos, sort by recency, take top 5
+  const recentVideos = useMemo(() => {
+    const libItems = entries.slice(0, 30).map(e => {
+      const video = ALL_VIDEOS.find(v => v.id === e.id)
+      if (!video) return null
+      return { ...video, visitedAt: e.visitedAt, isUserVideo: false }
+    }).filter(Boolean)
+
+    const userItems = userVideos.slice(0, 30).map(v => ({
+      id: v.id,
+      title: v.title,
+      subject: v.type === 'youtube' ? 'YouTube' : 'Uploaded',
+      color: v.type === 'youtube' ? 'thumb-sky' : 'thumb-teal',
+      icon: '▶',
+      duration: '',
+      isUserVideo: true,
+      visitedAt: v.addedAt,
+      _userVideoData: v,
+    }))
+
+    return [...libItems, ...userItems]
+      .sort((a, b) => new Date(b.visitedAt) - new Date(a.visitedAt))
+      .slice(0, 5)
+  }, [entries, userVideos])
 
   const recommended = user?.hobbies?.length
     ? ALL_VIDEOS.filter(v => user.hobbies.includes(v.subject)).slice(0, 10)
@@ -76,15 +105,26 @@ export default function DashboardPage() {
             ) : (
               <div className="dash-video-list">
                 {recentVideos.map(v => (
-                  <a key={v.id} href={`#/watch/${v.id}`} className="dash-video-item">
+                  <div
+                    key={v.id}
+                    className="dash-video-item"
+                    onClick={() => {
+                      if (v.isUserVideo) {
+                        sessionStorage.setItem('openUserVideo', JSON.stringify(v._userVideoData))
+                        navigate('/watch')
+                      } else {
+                        navigate(`/watch/${v.id}`)
+                      }
+                    }}
+                  >
                     <div className={`dash-video-thumb ${v.color}`}>{v.icon}</div>
                     <div className="dash-video-meta">
                       <div className="dash-video-title">{v.title}</div>
                       <div className="dash-video-info">{v.subject}</div>
                     </div>
-                    <div className="dash-video-duration">{v.duration}</div>
-                    {isFavourite(v.id) && <span className="dash-video-fav">♥</span>}
-                  </a>
+                    {v.duration && <div className="dash-video-duration">{v.duration}</div>}
+                    {!v.isUserVideo && isFavourite(v.id) && <span className="dash-video-fav">♥</span>}
+                  </div>
                 ))}
               </div>
             )}
@@ -100,6 +140,13 @@ export default function DashboardPage() {
             </div>
             <div className="dash-card-body">
               <div className="dash-topic-list">
+                <button
+                  className="dash-topic-chip chip-teal"
+                  onClick={openMyVideos}
+                >
+                  &#9654; My Videos
+                  <span className="dash-topic-count">({userVideos.length})</span>
+                </button>
                 {TOPICS.map((t, i) => (
                   <button
                     key={i}

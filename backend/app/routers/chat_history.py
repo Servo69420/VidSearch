@@ -4,6 +4,53 @@ from app.routers.auth import get_current_user
 
 router = APIRouter()
 
+
+@router.get("/all")
+async def get_all_history(
+    current_user=Depends(get_current_user),
+    db=Depends(get_db),
+):
+    rows = await db.fetch(
+        """SELECT
+               ch.id,
+               ch.content,
+               ch.created_at,
+               COALESCE(
+                   NULLIF(yv.title, ''),
+                   yv.source_url,
+                   uv.file_name,
+                   'Unknown Video'
+               ) AS video_title
+           FROM chat_history ch
+           LEFT JOIN yt_videos yv ON ch.video_id = yv.id
+           LEFT JOIN user_videos uv ON ch.user_video_id = uv.id
+           WHERE ch.user_id = $1::uuid AND ch.role = 'user'
+           ORDER BY ch.created_at DESC""",
+        current_user["sub"],
+    )
+    return [
+        {
+            "id": str(r["id"]),
+            "content": r["content"],
+            "created_at": r["created_at"].isoformat(),
+            "video_title": r["video_title"],
+        }
+        for r in rows
+    ]
+
+
+@router.delete("/all")
+async def clear_all_history(
+    current_user=Depends(get_current_user),
+    db=Depends(get_db),
+):
+    await db.execute(
+        "DELETE FROM chat_history WHERE user_id = $1::uuid",
+        current_user["sub"],
+    )
+    return {"deleted": True}
+
+
 @router.get("/{video_id}")
 async def get_chat_history(
     video_id: str,

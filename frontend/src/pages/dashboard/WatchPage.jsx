@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { ALL_VIDEOS } from '../../data/data'
 import { useHistory } from '../../contexts/HistoryContext'
+import { useUserVideos } from '../../contexts/UserVideosContext'
 import MarkdownMessage from '../../components/MarkdownMessage'
 import './WatchPage.css'
 
@@ -83,6 +84,7 @@ function loadYouTubeAPI() {
 
 export default function WatchPage({ params }) {
   const { recordVisit, recordChat } = useHistory()
+  const { addUserVideo } = useUserVideos()
   const videoFromParams = params?.id ? ALL_VIDEOS.find(v => v.id === parseInt(params.id)) : null
   const defaultYoutubeId = videoFromParams?.youtubeId || 'aircAruvnKk'
   const defaultTitle = videoFromParams?.title || 'But what is a neural network? \u2014 3Blue1Brown'
@@ -116,6 +118,16 @@ export default function WatchPage({ params }) {
     window.addEventListener('mouseup', onMouseUp)
   }
 
+  // Read a user video to pre-load (set by Browse/Dashboard when clicking a personal video)
+  const [pendingVideo] = useState(() => {
+    const raw = sessionStorage.getItem('openUserVideo')
+    if (raw) {
+      sessionStorage.removeItem('openUserVideo')
+      try { return JSON.parse(raw) } catch {}
+    }
+    return null
+  })
+
   const SESSION_KEY = 'watchpage_session'
   const chatKey = (vid) => `watchChat_${vid}`
 
@@ -128,11 +140,16 @@ export default function WatchPage({ params }) {
     try { return JSON.parse(localStorage.getItem(SESSION_KEY))?.urlInput ?? '' } catch { return '' }
   })
   const [videoId, setVideoId] = useState(() => {
+    if (pendingVideo?.type === 'youtube') return pendingVideo.youtubeId
     if (videoFromParams) return defaultYoutubeId
     try { return JSON.parse(localStorage.getItem(SESSION_KEY))?.videoId ?? defaultYoutubeId } catch { return defaultYoutubeId }
   })
-  const [localVideoUrl, setLocalVideoUrl] = useState(null)
+  const [localVideoUrl, setLocalVideoUrl] = useState(() => {
+    if (pendingVideo?.type === 'upload') return pendingVideo.localUrl
+    return null
+  })
   const [videoTitle, setVideoTitle] = useState(() => {
+    if (pendingVideo) return pendingVideo.title
     if (videoFromParams) return defaultTitle
     try { return JSON.parse(localStorage.getItem(SESSION_KEY))?.videoTitle ?? defaultTitle } catch { return defaultTitle }
   })
@@ -262,6 +279,7 @@ export default function WatchPage({ params }) {
       setUrlError(false)
       setUploadError('')
       setMessages([WELCOME_MESSAGE])
+      addUserVideo({ id: `yt_${id}`, type: 'youtube', youtubeId: id, title: 'Video loaded', addedAt: new Date().toISOString() })
 
       // Trigger transcription in the background
       const token = localStorage.getItem('auth_token')
@@ -344,10 +362,12 @@ export default function WatchPage({ params }) {
       }
 
       const data = await res.json()
-      setLocalVideoUrl(`http://localhost:8000${data.url}`)
+      const videoUrl = `http://localhost:8000${data.url}`
+      setLocalVideoUrl(videoUrl)
       setVideoId('')
       setVideoTitle(file.name)
       setMessages([WELCOME_MESSAGE])
+      addUserVideo({ id: `upload_${Date.now()}`, type: 'upload', localUrl: videoUrl, title: file.name, addedAt: new Date().toISOString() })
     } catch (err) {
       setUploadError(err.message || 'Upload failed.')
     } finally {
