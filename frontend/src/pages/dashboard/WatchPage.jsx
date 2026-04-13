@@ -123,7 +123,7 @@ export default function WatchPage({ params }) {
     const raw = sessionStorage.getItem('openUserVideo')
     if (raw) {
       sessionStorage.removeItem('openUserVideo')
-      try { return JSON.parse(raw) } catch {}
+      try { return JSON.parse(raw) } catch { }
     }
     return null
   })
@@ -179,12 +179,12 @@ export default function WatchPage({ params }) {
   }, [videoId])
 
   useEffect(() => {
-    try { localStorage.setItem(SESSION_KEY, JSON.stringify({ urlInput, videoId, videoTitle })) } catch {}
+    try { localStorage.setItem(SESSION_KEY, JSON.stringify({ urlInput, videoId, videoTitle })) } catch { }
   }, [videoId, videoTitle, urlInput])
 
   useEffect(() => {
     if (!videoId) return
-    try { localStorage.setItem(chatKey(videoId), JSON.stringify(messages)) } catch {}
+    try { localStorage.setItem(chatKey(videoId), JSON.stringify(messages)) } catch { }
   }, [messages, videoId])
 
   useEffect(() => {
@@ -198,14 +198,20 @@ export default function WatchPage({ params }) {
     let cancelled = false
     loadYouTubeAPI().then(() => {
       if (cancelled || !ytContainerRef.current) return
-      // Destroy previous player if exists
       if (ytPlayerRef.current) {
-        ytPlayerRef.current.destroy()
+        try { ytPlayerRef.current.destroy() } catch { }
         ytPlayerRef.current = null
       }
       ytReadyRef.current = false
-      ytPlayerRef.current = new window.YT.Player(ytContainerRef.current, {
+      // YT.Player replaces the target element with an <iframe>. Give it a
+      // disposable child so React keeps ownership of the ref'd wrapper.
+      const mount = document.createElement('div')
+      ytContainerRef.current.innerHTML = ''
+      ytContainerRef.current.appendChild(mount)
+      ytPlayerRef.current = new window.YT.Player(mount, {
         videoId,
+        width: '100%',
+        height: '100%',
         playerVars: { rel: 0, modestbranding: 1 },
         events: {
           onReady: () => { ytReadyRef.current = true },
@@ -215,7 +221,7 @@ export default function WatchPage({ params }) {
     return () => {
       cancelled = true
       if (ytPlayerRef.current) {
-        ytPlayerRef.current.destroy()
+        try { ytPlayerRef.current.destroy() } catch { }
         ytPlayerRef.current = null
       }
     }
@@ -290,7 +296,7 @@ export default function WatchPage({ params }) {
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({ url: urlInput.trim() }),
-      }).catch(() => {})
+      }).catch(() => { })
     } else {
       setUrlError(true)
     }
@@ -421,7 +427,6 @@ export default function WatchPage({ params }) {
             />
           ) : (
             <div
-              key={videoId}
               ref={ytContainerRef}
               className="watch-embed"
             />
