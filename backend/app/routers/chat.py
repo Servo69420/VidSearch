@@ -117,7 +117,7 @@ async def ask(
                     "content-type": "application/json",
                 },
                 json={
-                    "model": "google/gemma-4-26b-a4b-it", #google/gemma-4-31b-it
+                    "model": "google/gemini-2.5-flash-lite", #google/gemma-4-31b-it
                     "messages": openai_messages,
                     "tools": VIDEO_PLAYER_TOOLS,
                 },

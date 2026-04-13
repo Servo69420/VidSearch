@@ -15,6 +15,10 @@ async def get_all_history(
                ch.id,
                ch.content,
                ch.created_at,
+               ch.video_id,
+               ch.user_video_id,
+               yv.source_url AS yt_source_url,
+               uv.file_path AS uv_file_path,
                COALESCE(
                    NULLIF(yv.title, ''),
                    yv.source_url,
@@ -34,6 +38,10 @@ async def get_all_history(
             "content": r["content"],
             "created_at": r["created_at"].isoformat(),
             "video_title": r["video_title"],
+            "video_id": str(r["video_id"]) if r["video_id"] else None,
+            "user_video_id": str(r["user_video_id"]) if r["user_video_id"] else None,
+            "yt_source_url": r["yt_source_url"],
+            "uv_file_path": r["uv_file_path"],
         }
         for r in rows
     ]

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { navigate } from '../../router'
 import SearchBar from '../../components/ui/SearchBar'
 import './HistoryPage.css'
 
@@ -16,6 +17,34 @@ function formatTime(iso) {
   if (hours < 24) return `${hours}h ago`
   if (days < 7) return `${days}d ago`
   return date.toLocaleDateString()
+}
+
+function extractYouTubeId(url) {
+  if (!url) return null
+  const match = url.match(/[?&]v=([^&]+)/)
+  return match ? match[1] : null
+}
+
+function handleHistoryItemClick(h) {
+  if (h.yt_source_url) {
+    const ytId = extractYouTubeId(h.yt_source_url)
+    if (ytId) {
+      sessionStorage.setItem('openUserVideo', JSON.stringify({
+        type: 'youtube', youtubeId: ytId, title: h.video_title,
+      }))
+      navigate('/watch')
+      return
+    }
+  }
+  if (h.uv_file_path) {
+    const parts = h.uv_file_path.replace(/\\/g, '/').split('/')
+    const videosIdx = parts.lastIndexOf('videos')
+    const relative = videosIdx >= 0 ? parts.slice(videosIdx).join('/') : parts[parts.length - 1]
+    sessionStorage.setItem('openUserVideo', JSON.stringify({
+      type: 'upload', localUrl: `http://localhost:8000/uploads/${relative}`, title: h.video_title,
+    }))
+    navigate('/watch')
+  }
 }
 
 function formatVideoTitle(title) {
@@ -115,7 +144,7 @@ export default function HistoryPage() {
       ) : (
         <div className="history-list">
           {filtered.map(h => (
-            <div key={h.id} className="history-item">
+            <div key={h.id} className="history-item" onClick={() => handleHistoryItemClick(h)}>
               <div className="history-icon">&#128172;</div>
               <div className="history-content">
                 <div className="history-query">{h.content}</div>
