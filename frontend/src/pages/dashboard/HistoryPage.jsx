@@ -32,19 +32,26 @@ function handleHistoryItemClick(h) {
       sessionStorage.setItem('openUserVideo', JSON.stringify({
         type: 'youtube', youtubeId: ytId, title: h.video_title,
       }))
-      navigate('/watch')
-      return
+    } else {
+      sessionStorage.setItem('openUserVideo', JSON.stringify({
+        type: 'chat_only', chatVideoId: h.video_id, title: h.video_title,
+      }))
     }
+    navigate('/watch')
+    return
   }
   if (h.uv_file_path) {
     const parts = h.uv_file_path.replace(/\\/g, '/').split('/')
     const videosIdx = parts.lastIndexOf('videos')
     const relative = videosIdx >= 0 ? parts.slice(videosIdx).join('/') : parts[parts.length - 1]
     sessionStorage.setItem('openUserVideo', JSON.stringify({
-      type: 'upload', localUrl: `http://localhost:8000/uploads/${relative}`, title: h.video_title,
+      type: 'upload', localUrl: `http://localhost:8000/uploads/${relative}`,
+      title: h.video_title, videoId: h.user_video_id,
     }))
     navigate('/watch')
+    return
   }
+  navigate('/watch')
 }
 
 function formatVideoTitle(title) {

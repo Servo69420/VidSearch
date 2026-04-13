@@ -141,8 +141,15 @@ export default function WatchPage({ params }) {
   })
   const [videoId, setVideoId] = useState(() => {
     if (pendingVideo?.type === 'youtube') return pendingVideo.youtubeId
+    if (pendingVideo?.type === 'upload') return ''  // uploads don't use YouTube player
+    if (pendingVideo?.type === 'chat_only') return pendingVideo.chatVideoId || ''
     if (videoFromParams) return defaultYoutubeId
     try { return JSON.parse(localStorage.getItem(SESSION_KEY))?.videoId ?? defaultYoutubeId } catch { return defaultYoutubeId }
+  })
+  // Separate state for uploaded video UUID — used for API calls only, never fed to YouTube player
+  const [uploadedVideoId, setUploadedVideoId] = useState(() => {
+    if (pendingVideo?.type === 'upload') return pendingVideo.videoId || null
+    return null
   })
   const [localVideoUrl, setLocalVideoUrl] = useState(() => {
     if (pendingVideo?.type === 'upload') return pendingVideo.localUrl
@@ -156,7 +163,11 @@ export default function WatchPage({ params }) {
   const [urlError, setUrlError] = useState(false)
   const [chatInput, setChatInput] = useState('')
   const [messages, setMessages] = useState(() => {
-    return loadChat(defaultYoutubeId)
+    const initialVideoId = pendingVideo?.youtubeId
+      || (pendingVideo?.type === 'upload' ? pendingVideo.videoId : null)
+      || pendingVideo?.chatVideoId
+      || defaultYoutubeId
+    return loadChat(initialVideoId)
   })
   const [isLoading, setIsLoading] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
@@ -172,20 +183,25 @@ export default function WatchPage({ params }) {
   }, [params?.id])
 
   useEffect(() => {
-    if (!videoId) return
-    loadHistoryFromAPI(videoId).then(history => {
-      setMessages(history?.length ? history : [WELCOME_MESSAGE])
+    const vid = uploadedVideoId || videoId
+    if (!vid) return
+    loadHistoryFromAPI(vid).then(history => {
+      if (history?.length) setMessages(history)
     })
-  }, [videoId])
+  }, [videoId, uploadedVideoId])
 
   useEffect(() => {
-    try { localStorage.setItem(SESSION_KEY, JSON.stringify({ urlInput, videoId, videoTitle })) } catch {}
-  }, [videoId, videoTitle, urlInput])
+    // Only persist YouTube videoId to session — never a UUID from uploads
+    if (!uploadedVideoId) {
+      try { localStorage.setItem(SESSION_KEY, JSON.stringify({ urlInput, videoId, videoTitle })) } catch {}
+    }
+  }, [videoId, uploadedVideoId, videoTitle, urlInput])
 
   useEffect(() => {
-    if (!videoId) return
-    try { localStorage.setItem(chatKey(videoId), JSON.stringify(messages)) } catch {}
-  }, [messages, videoId])
+    const vid = uploadedVideoId || videoId
+    if (!vid) return
+    try { localStorage.setItem(chatKey(vid), JSON.stringify(messages)) } catch {}
+  }, [messages, videoId, uploadedVideoId])
 
   useEffect(() => {
     const container = messagesContainerRef.current
@@ -274,6 +290,7 @@ export default function WatchPage({ params }) {
     const id = parseYouTubeId(urlInput.trim())
     if (id) {
       setVideoId(id)
+      setUploadedVideoId(null)
       setLocalVideoUrl(null)
       setVideoTitle('Video loaded')
       setUrlError(false)
@@ -309,10 +326,10 @@ export default function WatchPage({ params }) {
     setMessages(updatedMessages)
     setChatInput('')
     setIsLoading(true)
-    recordChat(videoId)
+    recordChat(uploadedVideoId || videoId)
 
     try {
-      const { text, toolCalls } = await sendMessageToAPI(videoId, updatedMessages)
+      const { text, toolCalls } = await sendMessageToAPI(uploadedVideoId || videoId, updatedMessages)
 
       // Execute any tool calls (play/pause)
       if (toolCalls.length > 0) {
@@ -353,6 +370,7 @@ export default function WatchPage({ params }) {
     try {
       const res = await fetch('http://localhost:8000/files/upload_video', {
         method: 'POST',
+        headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` },
         body: formData,
       })
 
@@ -365,9 +383,10 @@ export default function WatchPage({ params }) {
       const videoUrl = `http://localhost:8000${data.url}`
       setLocalVideoUrl(videoUrl)
       setVideoId('')
+      setUploadedVideoId(data.user_video_id || null)
       setVideoTitle(file.name)
       setMessages([WELCOME_MESSAGE])
-      addUserVideo({ id: `upload_${Date.now()}`, type: 'upload', localUrl: videoUrl, title: file.name, addedAt: new Date().toISOString() })
+      addUserVideo({ id: `upload_${Date.now()}`, type: 'upload', localUrl: videoUrl, title: file.name, addedAt: new Date().toISOString(), videoId: data.user_video_id || null })
     } catch (err) {
       setUploadError(err.message || 'Upload failed.')
     } finally {
