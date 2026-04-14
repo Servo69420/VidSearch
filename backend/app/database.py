@@ -38,7 +38,9 @@ class PostgresDatabase(BaseDatabase):
 
     def get_pool(self) -> asyncpg.Pool:
         if self.__pool is None:
-            raise RuntimeError("Database pool is not initialised. Call connect() first.")
+            raise RuntimeError(
+                "Database pool is not initialised. Call connect() first."
+            )
         return self.__pool
 
 

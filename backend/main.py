@@ -45,11 +45,15 @@ app.add_middleware(
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
 app.include_router(chat.router, prefix="/chat", tags=["chat"])
 app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
-app.include_router(chat_history.router, prefix="/chat-history", tags=["chat-history"])
+app.include_router(
+    chat_history.router, prefix="/chat-history", tags=["chat-history"]
+)
+
 
 @app.get("/health")
 async def health():
     return {"status": "ok"}
 
-app.include_router(transcription.router, prefix="/transcription", tags=["transcription"])
-
+app.include_router(
+    transcription.router, prefix="/transcription", tags=["transcription"]
+)

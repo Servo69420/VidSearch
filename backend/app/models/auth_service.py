@@ -16,7 +16,6 @@ from asyncpg import Connection, UniqueViolationError
 from fastapi import HTTPException
 
 from app.config import settings
-from app.models.user import User
 
 
 # --- Component classes (used via Composition) ---
