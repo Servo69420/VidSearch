@@ -5,8 +5,8 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from app.file_input import router as file_router
 from app.routers import chat
+from app.routers import files
 from app.database import connect, disconnect
 from app.routers import auth
 from app.routers import transcription
@@ -28,7 +28,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="VidSearch API", version="0.1.0", lifespan=lifespan)
-app.include_router(file_router)
+app.include_router(files.router)
 
 app.add_middleware(
     CORSMiddleware,
@@ -45,14 +45,15 @@ app.add_middleware(
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
 app.include_router(chat.router, prefix="/chat", tags=["chat"])
 app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
-app.include_router(chat_history.router, prefix="/chat-history", tags=["chat-history"])
+app.include_router(
+    chat_history.router, prefix="/chat-history", tags=["chat-history"]
+)
+
 
 @app.get("/health")
 async def health():
     return {"status": "ok"}
 
-app.include_router(transcription.router, prefix="/transcription", tags=["transcription"])
-
-# & "C:\Users\Tima\miniconda3\envs\VidSearchpy12\Library\bin\pg_ctl.exe" -D "C:\Users\Tima\miniconda3\envs\VidSearchpy12\var\postgresql" start
-# C:\Users\Tima\miniconda3\envs\VidSearchpy12\Library\bin\pg_ctl.exe -D $env:PGDATA start
-# C:\Users\Tima\miniconda3\envs\VidSearchpy12\Library\bin\psql.exe -h 127.0.0.1 -U Tima -d postgres
+app.include_router(
+    transcription.router, prefix="/transcription", tags=["transcription"]
+)

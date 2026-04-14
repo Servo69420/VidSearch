@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends
 from app.database import get_db
-from app.routers.auth import get_current_user
+from app.dependencies import get_current_user
 
 router = APIRouter()
 
@@ -66,6 +66,7 @@ async def get_chat_history(
     db=Depends(get_db),
 ):
     import uuid as _uuid
+
     def is_uuid(val):
         try:
             _uuid.UUID(val)
@@ -87,7 +88,8 @@ async def get_chat_history(
     elif is_uuid(video_id):
         rows = await db.fetch(
             """SELECT role, content FROM chat_history
-               WHERE user_id = $1::uuid AND user_video_id = $2::uuid
+               WHERE user_id = $1::uuid
+                 AND (video_id = $2::uuid OR user_video_id = $2::uuid)
                ORDER BY created_at ASC""",
             current_user["sub"], video_id,
         )
