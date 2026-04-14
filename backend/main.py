@@ -53,6 +53,3 @@ async def health():
 
 app.include_router(transcription.router, prefix="/transcription", tags=["transcription"])
 
-# & "C:\Users\Tima\miniconda3\envs\VidSearchpy12\Library\bin\pg_ctl.exe" -D "C:\Users\Tima\miniconda3\envs\VidSearchpy12\var\postgresql" start
-# C:\Users\Tima\miniconda3\envs\VidSearchpy12\Library\bin\pg_ctl.exe -D $env:PGDATA start
-# C:\Users\Tima\miniconda3\envs\VidSearchpy12\Library\bin\psql.exe -h 127.0.0.1 -U Tima -d postgres
