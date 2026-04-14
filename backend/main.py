@@ -5,8 +5,8 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from app.file_input import router as file_router
 from app.routers import chat
+from app.routers import files
 from app.database import connect, disconnect
 from app.routers import auth
 from app.routers import transcription
@@ -28,7 +28,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="VidSearch API", version="0.1.0", lifespan=lifespan)
-app.include_router(file_router)
+app.include_router(files.router)
 
 app.add_middleware(
     CORSMiddleware,

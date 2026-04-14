@@ -1,75 +1,64 @@
 import uuid
+from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Optional
 
-from fastapi import APIRouter, File, HTTPException, Request, UploadFile
-
-from app.database import get_pool
-from app.models.auth_service import AuthService
+from fastapi import HTTPException, UploadFile
 
 UPLOAD_DIR = Path(__file__).resolve().parent.parent / "uploads"
 UPLOAD_DIR.mkdir(exist_ok=True)
 
-ALLOWED_TYPES = {"video/mp4", "video/webm", "video/ogg", "video/quicktime"}
-MAX_SIZE = 500 * 1024 * 1024  # 500 MB
 
-router = APIRouter(prefix="/files", tags=["files"])
-_auth_service = AuthService()
+class BaseFileUploader(ABC):
+    @abstractmethod
+    def validate(self, file: UploadFile) -> None:
+        pass
 
-
-async def _optional_user_id(request: Request) -> Optional[str]:
-    """Return the user UUID string if a valid Bearer token is present, else None."""
-    auth_header = request.headers.get("Authorization", "")
-    if not auth_header.startswith("Bearer "):
-        return None
-    token = auth_header.removeprefix("Bearer ").strip()
-    try:
-        async with get_pool().acquire() as db:
-            payload = await _auth_service.get_current_user(token, db)
-            return payload["sub"]
-    except Exception:
-        return None
+    @abstractmethod
+    async def save(self, file: UploadFile) -> Path:
+        pass
 
 
-@router.post("/upload_video")
-async def upload_video(request: Request, file: UploadFile = File(...)):
-    if file.content_type not in ALLOWED_TYPES:
-        raise HTTPException(
-            status_code=400,
-            detail="Unsupported video format. Use mp4, webm, ogg, or mov.")
+class VideoFileUploader(BaseFileUploader):
+    def __init__(
+        self,
+        upload_dir: Path,
+        allowed_types: set[str],
+        max_size: int,
+    ) -> None:
+        self.__upload_dir = upload_dir
+        self.__allowed_types = allowed_types
+        self.__max_size = max_size
 
-    ext = Path(file.filename).suffix or ".mp4"
-    saved_name = f"{uuid.uuid4().hex}{ext}"
-    dest = UPLOAD_DIR / saved_name
+    @property
+    def upload_dir(self) -> Path:
+        return self.__upload_dir
 
-    size = 0
-    with open(dest, "wb") as f:
-        while chunk := await file.read(1024 * 1024):
-            size += len(chunk)
-            if size > MAX_SIZE:
-                dest.unlink(missing_ok=True)
-                raise HTTPException(
-                    status_code=413,
-                    detail="File too large. Max 500 MB.")
-            f.write(chunk)
+    def validate(self, file: UploadFile) -> None:
+        if file.content_type not in self.__allowed_types:
+            raise HTTPException(
+                status_code=400,
+                detail="Unsupported video format. Use mp4, webm, ogg, or mov.",
+            )
 
-    user_video_id = None
-    user_id = await _optional_user_id(request)
-    if user_id:
-        try:
-            async with get_pool().acquire() as db:
-                row = await db.fetchrow(
-                    """INSERT INTO user_videos (user_id, file_name, file_path)
-                       VALUES ($1::uuid, $2, $3) RETURNING id""",
-                    user_id, file.filename, str(dest),
-                )
-                user_video_id = str(row["id"])
-        except Exception:
-            pass  # non-fatal — video is still uploaded
+    async def save(self, file: UploadFile) -> Path:
+        ext = Path(file.filename).suffix or ".mp4"
+        dest = self.__upload_dir / f"{uuid.uuid4().hex}{ext}"
+        size = 0
+        with open(dest, "wb") as f:
+            while chunk := await file.read(1024 * 1024):
+                size += len(chunk)
+                if size > self.__max_size:
+                    dest.unlink(missing_ok=True)
+                    raise HTTPException(
+                        status_code=413,
+                        detail="File too large. Max 500 MB.",
+                    )
+                f.write(chunk)
+        return dest
 
-    return {
-        "filename": saved_name,
-        "original_name": file.filename,
-        "url": f"/uploads/{saved_name}",
-        "user_video_id": user_video_id,
-    }
+
+_uploader = VideoFileUploader(
+    upload_dir=UPLOAD_DIR,
+    allowed_types={"video/mp4", "video/webm", "video/ogg", "video/quicktime"},
+    max_size=500 * 1024 * 1024,
+)

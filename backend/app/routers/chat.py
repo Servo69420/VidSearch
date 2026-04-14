@@ -2,7 +2,7 @@ import httpx
 from pydantic import BaseModel
 from app.config import settings
 from fastapi import APIRouter, HTTPException, Depends
-from app.routers.auth import get_current_user
+from app.dependencies import get_current_user
 from app.database import get_db
 
 
@@ -95,9 +95,10 @@ async def ask(
                 "You are a helpful assistant that answers questions "
                 "about the content of the video. "
                 "IMPORTANT: By default, respond with text. "
-                "When explaining the video content, you can also use the following tools to "
-                "control the video player together with the explanation (e.g. 'play the video', "
-                "'pause it', 'mute', 'skip to 2:30'). "
+                "When explaining the video content, you can also use the "
+                "following tools to control the video player together with "
+                "the explanation (e.g. 'play the video', 'pause it', "
+                "'mute', 'skip to 2:30'). "
                 "For any other message — questions, greetings, "
                 "conversation — respond with normal text and "
                 "call tools to assist with the explanation."
@@ -135,6 +136,7 @@ async def ask(
             data = result.json()
 
             import uuid as _uuid
+
             def is_uuid(val):
                 try:
                     _uuid.UUID(val)
@@ -152,7 +154,8 @@ async def ask(
                 yt_uuid = await db.fetchval(
                     """INSERT INTO yt_videos (source_type, source_url)
                        VALUES ('youtube', $1)
-                       ON CONFLICT (source_url) DO UPDATE SET source_url = EXCLUDED.source_url
+                       ON CONFLICT (source_url)
+                       DO UPDATE SET source_url = EXCLUDED.source_url
                        RETURNING id""",
                     f"https://www.youtube.com/watch?v={request.video_id}",
                 )
@@ -162,21 +165,26 @@ async def ask(
             can_save = True
 
             user_message = next(
-                (m["content"] for m in reversed(request.message) if m["role"] == "user"),
+                (
+                    m["content"] for m in reversed(request.message)
+                    if m["role"] == "user"
+                ),
                 None,
             )
             if can_save and user_message:
                 await db.execute(
-                    """INSERT INTO chat_history (user_id, video_id, user_video_id, role, content)
-                    VALUES ($1::uuid, $2::uuid, $3::uuid, 'user', $4)""",
+                    "INSERT INTO chat_history "
+                    "(user_id, video_id, user_video_id, role, content) "
+                    "VALUES ($1::uuid, $2::uuid, $3::uuid, 'user', $4)",
                     user_id, video_id, user_video_id, user_message,
                 )
 
             assistant_message = data["choices"][0]["message"].get("content")
             if can_save and assistant_message:
                 await db.execute(
-                    """INSERT INTO chat_history (user_id, video_id, user_video_id, role, content)
-                    VALUES ($1::uuid, $2::uuid, $3::uuid, 'assistant', $4)""",
+                    "INSERT INTO chat_history "
+                    "(user_id, video_id, user_video_id, role, content) "
+                    "VALUES ($1::uuid, $2::uuid, $3::uuid, 'assistant', $4)",
                     user_id, video_id, user_video_id, assistant_message,
                 )
             return data
