@@ -9,7 +9,7 @@ Usage (called after transcription is complete)::
     pipeline = RAGPipeline(db)
     await pipeline.process(transcription_id)
 """
-
+#TODO: INCOMPLETE DONT TOUCH FOR NOW
 from __future__ import annotations
 
 import json
