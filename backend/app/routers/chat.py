@@ -4,6 +4,7 @@ from app.config import settings
 from fastapi import APIRouter, HTTPException, Depends
 from app.dependencies import get_current_user
 from app.database import get_db
+from app.routers.video_player_tools import VIDEO_PLAYER_TOOLS
 
 
 router = APIRouter()
