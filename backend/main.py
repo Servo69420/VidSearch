@@ -1,3 +1,6 @@
+
+#Added tests : conda run -n VidSearchpy11 python -m unittest discover -s tests -v
+
 import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
