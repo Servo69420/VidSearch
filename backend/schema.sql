@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS user_videos (
     user_id    UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     file_name  TEXT NOT NULL,
     file_path  TEXT NOT NULL,
+    file_hash  TEXT NOT NULL DEFAULT '',
     created_at TIMESTAMPTZ DEFAULT now()
 );
 
@@ -43,6 +44,7 @@ CREATE TABLE IF NOT EXISTS transcriptions (
     full_text     TEXT NOT NULL,
     segments      JSONB NOT NULL,
     language      TEXT DEFAULT '',
+    model_version TEXT NOT NULL DEFAULT '',
     status        TEXT NOT NULL DEFAULT 'pending'
                   CHECK (status IN ('pending', 'chunking', 'summarizing', 'ready', 'failed', 'cancel')),
     created_at    TIMESTAMPTZ DEFAULT now(),

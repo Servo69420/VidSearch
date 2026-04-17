@@ -448,7 +448,7 @@
   .watch-left  { order: 1; }
   .watch-resizer { order: 2; }
   .watch-right { order: 3; }
-  .watch-details { order: 4; padding: var(--space-lg); }
+  .watch-details { display: none; }
 
   .watch-resizer {
     width: 100%;

@@ -32,7 +32,7 @@ class YouTubeTranscriber(BaseTranscriber):
         existing = await db.fetchrow(
             "SELECT t.* FROM transcriptions t "
             "JOIN yt_videos v ON t.video_id = v.id "
-            "WHERE v.source_url = $1",
+            "WHERE v.source_url = $1 AND t.status = 'ready'",
             source,
         )
         if existing:
@@ -53,8 +53,8 @@ class YouTubeTranscriber(BaseTranscriber):
         )
 
         row = await db.fetchrow(
-            "INSERT INTO transcriptions (video_id, full_text, segments, status) "
-            "VALUES ($1, $2, $3::jsonb, 'ready') RETURNING *",
+            "INSERT INTO transcriptions (video_id, full_text, segments, model_version, status) "
+            "VALUES ($1, $2, $3::jsonb, 'youtube-transcript-api', 'ready') RETURNING *",
             video["id"], full_text, json.dumps(segments),
         )
 
@@ -63,6 +63,7 @@ class YouTubeTranscriber(BaseTranscriber):
 
 class VideoFileTranscriber(BaseTranscriber):
     def __init__(self, model_name: str = "base") -> None:
+        self.__model_name = model_name
         self.__model = whisper.load_model(model_name)
 
     @property
@@ -84,12 +85,13 @@ class VideoFileTranscriber(BaseTranscriber):
 
             row = await db.fetchrow(
                 "INSERT INTO transcriptions "
-                "(user_video_id, full_text, segments, language, status) "
-                "VALUES ($1, $2, $3::jsonb, $4, 'ready') RETURNING *",
+                "(user_video_id, full_text, segments, language, model_version, status) "
+                "VALUES ($1, $2, $3::jsonb, $4, $5, 'ready') RETURNING *",
                 user_video_id,
                 full_text,
                 json.dumps(segments),
                 language,
+                f"whisper-{self.__model_name}",
             )
         finally:
             await asyncio.to_thread(delete_temporary_audio_file, wav_path)
@@ -114,7 +116,25 @@ async def transcribe_video_yt(url: str, db) -> dict:
 
 
 async def transcribe_uploaded_video(
-    video_path: str, user_video_id: str, db
+    video_path: str, user_video_id: str, db, file_hash: str = ""
 ) -> dict:
+    if file_hash:
+        cached = await db.fetchrow(
+            "SELECT t.* FROM transcriptions t "
+            "JOIN user_videos uv ON t.user_video_id = uv.id "
+            "WHERE uv.file_hash = $1 AND t.status = 'ready' "
+            "ORDER BY t.created_at DESC LIMIT 1",
+            file_hash,
+        )
+        if cached:
+            row = await db.fetchrow(
+                "INSERT INTO transcriptions "
+                "(user_video_id, full_text, segments, language, model_version, status) "
+                "VALUES ($1, $2, $3, $4, $5, 'ready') RETURNING *",
+                user_video_id, cached["full_text"], cached["segments"],
+                cached["language"], cached["model_version"],
+            )
+            return dict(row)
+
     transcriber = TranscriberFactory.get_transcriber(video_path)
     return await transcriber.transcribe(video_path, db, user_video_id)

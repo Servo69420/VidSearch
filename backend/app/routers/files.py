@@ -25,10 +25,10 @@ async def _optional_user_id(request: Request) -> Optional[str]:
         return None
 
 
-async def _run_transcription(file_path: str, user_video_id: str) -> None:
+async def _run_transcription(file_path: str, user_video_id: str, file_hash: str) -> None:
     try:
         async with get_pool().acquire() as db:
-            await transcribe_uploaded_video(file_path, user_video_id, db)
+            await transcribe_uploaded_video(file_path, user_video_id, db, file_hash=file_hash)
     except Exception:
         traceback.print_exc()
 
@@ -40,7 +40,7 @@ async def upload_video(
     file: UploadFile = File(...),
 ):
     _uploader.validate(file)
-    dest = await _uploader.save(file)
+    dest, file_hash = await _uploader.save(file)
 
     user_video_id = None
     user_id = await _optional_user_id(request)
@@ -48,16 +48,16 @@ async def upload_video(
         try:
             async with get_pool().acquire() as db:
                 row = await db.fetchrow(
-                    """INSERT INTO user_videos (user_id, file_name, file_path)
-                       VALUES ($1::uuid, $2, $3) RETURNING id""",
-                    user_id, file.filename, str(dest),
+                    """INSERT INTO user_videos (user_id, file_name, file_path, file_hash)
+                       VALUES ($1::uuid, $2, $3, $4) RETURNING id""",
+                    user_id, file.filename, str(dest), file_hash,
                 )
                 user_video_id = str(row["id"])
         except Exception:
             traceback.print_exc()
 
     if user_video_id:
-        background_tasks.add_task(_run_transcription, str(dest), user_video_id)
+        background_tasks.add_task(_run_transcription, str(dest), user_video_id, file_hash)
 
     return {
         "filename": dest.name,

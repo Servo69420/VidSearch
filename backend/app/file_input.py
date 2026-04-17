@@ -1,3 +1,4 @@
+import hashlib
 import uuid
 from abc import ABC, abstractmethod
 from pathlib import Path
@@ -14,7 +15,7 @@ class BaseFileUploader(ABC):
         pass
 
     @abstractmethod
-    async def save(self, file: UploadFile) -> Path:
+    async def save(self, file: UploadFile) -> tuple[Path, str]:
         pass
 
 
@@ -40,22 +41,24 @@ class VideoFileUploader(BaseFileUploader):
                 detail="Unsupported video format. Use mp4, webm, ogg, or mov.",
             )
 
-    async def save(self, file: UploadFile) -> Path:
+    async def save(self, file: UploadFile) -> tuple[Path, str]:
         ext = Path(file.filename).suffix or ".mp4"
         dest = self.__upload_dir / f"{uuid.uuid4().hex}{ext}"
         size = 0
         too_large = False
+        hasher = hashlib.sha256()
         with open(dest, "wb") as f:
             while chunk := await file.read(1024 * 1024):
                 size += len(chunk)
                 if size > self.__max_size:
                     too_large = True
                     break
+                hasher.update(chunk)
                 f.write(chunk)
         if too_large:
             dest.unlink(missing_ok=True)
             raise HTTPException(status_code=413, detail="File too large. Max 500 MB.")
-        return dest
+        return dest, hasher.hexdigest()
 
 
 _uploader = VideoFileUploader(
