@@ -48,6 +48,55 @@ async def get_all_history(
     ]
 
 
+@router.get("/videos")
+async def get_history_videos(
+    current_user=Depends(get_current_user),
+    db=Depends(get_db),
+):
+    from pathlib import Path as PyPath
+
+    rows = await db.fetch(
+        """SELECT
+               ch.video_id,
+               ch.user_video_id,
+               COALESCE(
+                   NULLIF(yv.title, ''),
+                   yv.source_url,
+                   uv.file_name,
+                   'Unknown Video'
+               ) AS video_title,
+               MAX(ch.created_at) AS last_message_at,
+               COUNT(*) FILTER (WHERE ch.role = 'user') AS message_count,
+               yv.source_url AS yt_source_url,
+               uv.file_name AS uv_file_name,
+               uv.file_path AS uv_file_path
+           FROM chat_history ch
+           LEFT JOIN yt_videos yv ON ch.video_id = yv.id
+           LEFT JOIN user_videos uv ON ch.user_video_id = uv.id
+           WHERE ch.user_id = $1::uuid
+           GROUP BY ch.video_id, ch.user_video_id,
+                    yv.title, yv.source_url, uv.file_name, uv.file_path
+           ORDER BY last_message_at DESC""",
+        current_user["sub"],
+    )
+    result = []
+    for r in rows:
+        video_url = None
+        if r["uv_file_path"]:
+            video_url = f"/uploads/{PyPath(r['uv_file_path']).name}"
+        result.append({
+            "video_id": str(r["video_id"]) if r["video_id"] else None,
+            "user_video_id": str(r["user_video_id"]) if r["user_video_id"] else None,
+            "video_title": r["video_title"],
+            "last_message_at": r["last_message_at"].isoformat(),
+            "message_count": r["message_count"],
+            "yt_source_url": r["yt_source_url"],
+            "uv_file_name": r["uv_file_name"],
+            "video_url": video_url,
+        })
+    return result
+
+
 @router.delete("/all")
 async def clear_all_history(
     current_user=Depends(get_current_user),
