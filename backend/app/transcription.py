@@ -6,7 +6,9 @@ from abc import ABC, abstractmethod
 import whisper
 from youtube_transcript_api import YouTubeTranscriptApi
 
-from app.openrouter_embedder import DEFAULT_EMBEDDING_MODEL, OpenRouterEmbedder
+from app.model_config import MODEL_CONFIG
+from app.embedder import OpenRouterEmbedder
+from app.summarizer import OpenRouterSummarizer
 from app.rag import RAGPipeline
 from app.video_to_audio import delete_temporary_audio_file, video_to_audio
 from app.youtube import (
@@ -19,13 +21,24 @@ from app.youtube import (
 logger = logging.getLogger(__name__)
 
 
-async def _run_phase_one_pipeline(db, transcription_id: str, embed_model: str) -> None:
+async def _run_rag_pipeline(
+    db,
+    transcription_id: str,
+    embed_model: str,
+    summary_model: str,
+) -> None:
     logger.info(
-        "Starting phase-1 indexing for transcription %s with %s",
+        "Starting RAG indexing for transcription %s (embed=%s summary=%s)",
         transcription_id,
         embed_model,
+        summary_model,
     )
-    pipeline = RAGPipeline(db, embedder=OpenRouterEmbedder(model=embed_model))
+    pipeline = RAGPipeline(
+        db,
+        embedder=OpenRouterEmbedder(model=embed_model),
+        summarizer=OpenRouterSummarizer(model=summary_model),
+        embed_batch_size=MODEL_CONFIG.rag_embed_batch_size,
+    )
     await pipeline.process(transcription_id)
 
 
@@ -43,7 +56,8 @@ class YouTubeTranscriber(BaseTranscriber):
         self,
         source: str,
         db,
-        embed_model: str = DEFAULT_EMBEDDING_MODEL,
+        embed_model: str = MODEL_CONFIG.embedding_model,
+        summary_model: str = MODEL_CONFIG.phase2_summary_model,
     ) -> dict:
         video_id = self.__get_video_id(source)
         if not video_id:
@@ -64,10 +78,11 @@ class YouTubeTranscriber(BaseTranscriber):
                 existing["id"],
             )
             if int(chunk_count or 0) == 0:
-                await _run_phase_one_pipeline(
+                await _run_rag_pipeline(
                     db,
                     str(existing["id"]),
                     embed_model,
+                    summary_model,
                 )
                 logger.info(
                     "Re-indexed existing YouTube transcription %s",
@@ -94,10 +109,10 @@ class YouTubeTranscriber(BaseTranscriber):
             video.yt_video_id,
             full_text,
             json.dumps(segments),
-            f"youtube-transcript-api+{embed_model}",
+            f"youtube-transcript-api+{embed_model}+{summary_model}",
         )
 
-        await _run_phase_one_pipeline(db, str(row["id"]), embed_model)
+        await _run_rag_pipeline(db, str(row["id"]), embed_model, summary_model)
         logger.info("Indexed new YouTube transcription %s", row["id"])
         row = await db.fetchrow(
             "SELECT * FROM transcriptions WHERE id = $1::uuid",
@@ -159,12 +174,14 @@ class TranscriberFactory:
 async def transcribe_video_yt(
     url: str,
     db,
-    embed_model: str = DEFAULT_EMBEDDING_MODEL,
+    embed_model: str = MODEL_CONFIG.embedding_model,
+    summary_model: str = MODEL_CONFIG.phase2_summary_model,
 ) -> dict:
     return await TranscriberFactory._yt.transcribe(
         url,
         db,
         embed_model=embed_model,
+        summary_model=summary_model,
     )
 
 

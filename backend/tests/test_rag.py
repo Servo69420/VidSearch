@@ -11,6 +11,36 @@ class _FakeEmbedder:
 class _FakeDB:
     async def fetch(self, query, transcription_id, vector, top_k):
         _ = (query, transcription_id, vector, top_k)
+        if "summary_embedding" in query:
+            return [
+                {
+                    "id": "2ea4bc27-cdb5-48b3-84f5-5ea3fc06dccc",
+                    "idx": 0,
+                    "start_s": 0.0,
+                    "end_s": 30.0,
+                    "summary": "Video introduction",
+                    "score": 0.93,
+                }
+            ]
+
+        if "parent_chunk_id" in query:
+            return [
+                {
+                    "idx": 0,
+                    "start_s": 0.0,
+                    "end_s": 15.0,
+                    "text": "Introduction to topic",
+                    "score": 0.91,
+                },
+                {
+                    "idx": 1,
+                    "start_s": 15.0,
+                    "end_s": 30.0,
+                    "text": "Deep explanation",
+                    "score": 0.87,
+                },
+            ]
+
         return [
             {
                 "idx": 0,

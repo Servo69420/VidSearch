@@ -65,20 +65,30 @@ CREATE TABLE IF NOT EXISTS transcript_chunks (
     id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     transcription_id  UUID NOT NULL REFERENCES transcriptions(id) ON DELETE CASCADE,
     idx               INT NOT NULL,
+    level             SMALLINT NOT NULL DEFAULT 1,
+    parent_chunk_id   UUID REFERENCES transcript_chunks(id) ON DELETE CASCADE,
     start_s           REAL NOT NULL,
     end_s             REAL NOT NULL,
     text              TEXT NOT NULL,
+    segment_start_idx INT,
+    segment_end_idx   INT,
     summary           TEXT,
     role              TEXT,
     keywords          TEXT[] DEFAULT '{}',
     embedding         VECTOR(1024),
     summary_embedding VECTOR(1024),
     created_at        TIMESTAMPTZ DEFAULT now(),
-    UNIQUE (transcription_id, idx)
+    UNIQUE (transcription_id, level, idx)
 );
 
 CREATE INDEX IF NOT EXISTS transcript_chunks_transcription_idx
     ON transcript_chunks (transcription_id, idx);
+
+CREATE INDEX IF NOT EXISTS transcript_chunks_transcription_level_idx
+    ON transcript_chunks (transcription_id, level, idx);
+
+CREATE INDEX IF NOT EXISTS transcript_chunks_parent_idx
+    ON transcript_chunks (parent_chunk_id);
 
 CREATE INDEX IF NOT EXISTS transcript_chunks_embedding_idx
     ON transcript_chunks USING ivfflat (embedding vector_cosine_ops)
