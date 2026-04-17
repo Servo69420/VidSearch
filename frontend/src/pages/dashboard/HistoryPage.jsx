@@ -1,5 +1,6 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { navigate } from '../../router'
+import { useAuth } from '../../contexts/AuthContext'
 import SearchBar from '../../components/ui/SearchBar'
 import './HistoryPage.css'
 
@@ -36,6 +37,16 @@ function formatVideoTitle(h) {
   return h.uv_file_name || h.video_title || 'Uploaded Video'
 }
 
+const chatKey = (userId, vid) => `watchChat_${userId || 'anonymous'}_${vid}`
+const legacyChatKey = (vid) => `watchChat_${vid}`
+
+function removeChatCache(userId, videoIds) {
+  for (const id of videoIds.filter(Boolean)) {
+    localStorage.removeItem(chatKey(userId, id))
+    localStorage.removeItem(legacyChatKey(id))
+  }
+}
+
 function handleVideoClick(h) {
   if (h.yt_source_url) {
     const ytId = extractYouTubeId(h.yt_source_url)
@@ -63,11 +74,14 @@ function handleVideoClick(h) {
 }
 
 export default function HistoryPage() {
+  const { user } = useAuth()
   const [videos, setVideos] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [search, setSearch] = useState('')
   const [clearing, setClearing] = useState(false)
+  const [contextMenu, setContextMenu] = useState(null) // { x, y, video }
+  const menuRef = useRef(null)
 
   const fetchVideos = useCallback(async () => {
     const token = localStorage.getItem('auth_token')
@@ -87,6 +101,45 @@ export default function HistoryPage() {
 
   useEffect(() => { fetchVideos() }, [fetchVideos])
 
+  useEffect(() => {
+    function onPointerDown(e) {
+      if (menuRef.current && !menuRef.current.contains(e.target)) {
+        setContextMenu(null)
+      }
+    }
+    if (contextMenu) {
+      document.addEventListener('pointerdown', onPointerDown)
+      return () => document.removeEventListener('pointerdown', onPointerDown)
+    }
+  }, [contextMenu])
+
+  function handleContextMenu(e, h) {
+    e.preventDefault()
+    e.stopPropagation()
+    setContextMenu({ x: e.clientX, y: e.clientY, video: h })
+  }
+
+  async function handleDeleteChat(h) {
+    setContextMenu(null)
+    const id = h.video_id || h.user_video_id
+    if (!id) return
+    const token = localStorage.getItem('auth_token')
+    try {
+      const res = await fetch(`${API_BASE}/chat-history/video/${id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!res.ok) throw new Error()
+      const ytId = extractYouTubeId(h.yt_source_url)
+      removeChatCache(user?.id, [ytId, h.video_id, h.user_video_id])
+      setVideos(prev => prev.filter(v =>
+        (v.video_id || v.user_video_id) !== id
+      ))
+    } catch {
+      setError('Failed to delete chat.')
+    }
+  }
+
   async function handleClear() {
     if (!window.confirm('Clear all chat history? This cannot be undone.')) return
     setClearing(true)
@@ -97,6 +150,13 @@ export default function HistoryPage() {
         headers: { Authorization: `Bearer ${token}` },
       })
       if (!res.ok) throw new Error()
+      for (const h of videos) {
+        removeChatCache(user?.id, [
+          extractYouTubeId(h.yt_source_url),
+          h.video_id,
+          h.user_video_id,
+        ])
+      }
       setVideos([])
     } catch {
       setError('Failed to clear history.')
@@ -154,7 +214,12 @@ export default function HistoryPage() {
               ? `https://img.youtube.com/vi/${ytId}/mqdefault.jpg`
               : null
             return (
-              <div key={h.user_video_id || h.video_id || i} className="history-item" onClick={() => handleVideoClick(h)}>
+              <div
+                key={h.user_video_id || h.video_id || i}
+                className="history-item"
+                onClick={() => handleVideoClick(h)}
+                onContextMenu={e => handleContextMenu(e, h)}
+              >
                 <div className="history-icon">
                   {thumbnail
                     ? <img src={thumbnail} alt="" className="history-thumbnail" />
@@ -177,6 +242,21 @@ export default function HistoryPage() {
               </div>
             )
           })}
+        </div>
+      )}
+
+      {contextMenu && (
+        <div
+          ref={menuRef}
+          className="history-context-menu"
+          style={{ top: contextMenu.y, left: contextMenu.x }}
+        >
+          <button
+            className="history-context-item history-context-delete"
+            onClick={() => handleDeleteChat(contextMenu.video)}
+          >
+            &#128465; Delete chat
+          </button>
         </div>
       )}
     </div>

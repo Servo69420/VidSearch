@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { ALL_VIDEOS } from '../../data/data'
 import { useHistory } from '../../contexts/HistoryContext'
+import { useAuth } from '../../contexts/AuthContext'
 import { useUserVideos } from '../../contexts/UserVideosContext'
 import MarkdownMessage from '../../components/MarkdownMessage'
 import './WatchPage.css'
@@ -22,6 +23,9 @@ const WELCOME_MESSAGE = {
   role: 'assistant',
   text: 'Hi! Paste a YouTube link above and I\'ll help you understand the video. You can ask me anything about its content.',
 }
+
+const chatKey = (userId, vid) => `watchChat_${userId || 'anonymous'}_${vid}`
+const legacyChatKey = (vid) => `watchChat_${vid}`
 
 async function loadHistoryFromAPI(videoId) {
   const token = localStorage.getItem('auth_token')
@@ -84,6 +88,7 @@ function loadYouTubeAPI() {
 
 export default function WatchPage({ params }) {
   const { recordVisit, recordChat } = useHistory()
+  const { user } = useAuth()
   const { addUserVideo } = useUserVideos()
   const videoFromParams = params?.id ? ALL_VIDEOS.find(v => v.id === parseInt(params.id)) : null
   const defaultYoutubeId = videoFromParams?.youtubeId || 'aircAruvnKk'
@@ -97,7 +102,7 @@ export default function WatchPage({ params }) {
   const ytReadyRef = useRef(false)
   const ytContainerRef = useRef(null)
 
-  function handleResizerMouseDown(e) {
+  function handleResizerMouseDown() {
     const isMobile = window.innerWidth <= 900
     isResizing.current = true
     document.body.style.cursor = isMobile ? 'row-resize' : 'col-resize'
@@ -134,16 +139,23 @@ export default function WatchPage({ params }) {
     const raw = sessionStorage.getItem('openUserVideo')
     if (raw) {
       sessionStorage.removeItem('openUserVideo')
-      try { return JSON.parse(raw) } catch { }
+      try {
+        return JSON.parse(raw)
+      } catch {
+        return null
+      }
     }
     return null
   })
 
   const SESSION_KEY = 'watchpage_session'
-  const chatKey = (vid) => `watchChat_${vid}`
 
   function loadChat(vid) {
-    try { return JSON.parse(localStorage.getItem(chatKey(vid))) ?? [WELCOME_MESSAGE] } catch { return [WELCOME_MESSAGE] }
+    try {
+      return JSON.parse(localStorage.getItem(chatKey(user?.id, vid))) ?? [WELCOME_MESSAGE]
+    } catch {
+      return [WELCOME_MESSAGE]
+    }
   }
 
   const [urlInput, setUrlInput] = useState(() => {
@@ -183,6 +195,7 @@ export default function WatchPage({ params }) {
   const [isLoading, setIsLoading] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
   const [uploadError, setUploadError] = useState('')
+  const [videoLoadError, setVideoLoadError] = useState(false)
 
   const messagesEndRef = useRef(null)
   const messagesContainerRef = useRef(null)
@@ -191,7 +204,7 @@ export default function WatchPage({ params }) {
 
   useEffect(() => {
     if (params?.id) recordVisit(params.id)
-  }, [params?.id])
+  }, [params?.id, recordVisit])
 
   useEffect(() => {
     function onResize() {
@@ -207,18 +220,39 @@ export default function WatchPage({ params }) {
     const vid = uploadedVideoId || videoId
     if (!vid) return
     loadHistoryFromAPI(vid).then(history => {
-      if (history?.length) setMessages(history)
+      if (history !== null) {
+        if (history.length) {
+          setMessages(history)
+        } else {
+          setMessages([WELCOME_MESSAGE])
+          try {
+            localStorage.removeItem(chatKey(user?.id, vid))
+            localStorage.removeItem(legacyChatKey(vid))
+          } catch {
+            // Ignore storage cleanup failures.
+          }
+        }
+      }
     })
-  }, [videoId, uploadedVideoId])
+  }, [videoId, uploadedVideoId, user?.id])
 
   useEffect(() => {
-    try { localStorage.setItem(SESSION_KEY, JSON.stringify({ urlInput, videoId, videoTitle })) } catch { }
+    try {
+      localStorage.setItem(SESSION_KEY, JSON.stringify({ urlInput, videoId, videoTitle }))
+    } catch {
+      // Ignore storage write failures.
+    }
   }, [videoId, videoTitle, urlInput])
 
   useEffect(() => {
-    if (!videoId) return
-    try { localStorage.setItem(chatKey(videoId), JSON.stringify(messages)) } catch { }
-  }, [messages, videoId])
+    const vid = uploadedVideoId || videoId
+    if (!vid) return
+    try {
+      localStorage.setItem(chatKey(user?.id, vid), JSON.stringify(messages))
+    } catch {
+      // Ignore storage write failures.
+    }
+  }, [messages, uploadedVideoId, user?.id, videoId])
 
   useEffect(() => {
     const container = messagesContainerRef.current
@@ -232,7 +266,11 @@ export default function WatchPage({ params }) {
     loadYouTubeAPI().then(() => {
       if (cancelled || !ytContainerRef.current) return
       if (ytPlayerRef.current) {
-        try { ytPlayerRef.current.destroy() } catch { }
+        try {
+          ytPlayerRef.current.destroy()
+        } catch {
+          // Ignore player cleanup failures.
+        }
         ytPlayerRef.current = null
       }
       ytReadyRef.current = false
@@ -254,7 +292,11 @@ export default function WatchPage({ params }) {
     return () => {
       cancelled = true
       if (ytPlayerRef.current) {
-        try { ytPlayerRef.current.destroy() } catch { }
+        try {
+          ytPlayerRef.current.destroy()
+        } catch {
+          // Ignore player cleanup failures.
+        }
         ytPlayerRef.current = null
       }
     }
@@ -455,12 +497,24 @@ export default function WatchPage({ params }) {
 
         <div className="watch-embed-wrapper">
           {localVideoUrl ? (
-            <video
-              key={localVideoUrl}
-              className="watch-embed"
-              src={localVideoUrl}
-              controls
-            />
+            videoLoadError ? (
+              <div className="watch-no-video">
+                <div className="watch-no-video-icon">&#128249;</div>
+                <p className="watch-no-video-title">Video not available</p>
+                <p className="watch-no-video-sub">
+                  Uploaded videos are not stored on our servers for security and privacy reasons.
+                  Re-upload the file to continue chatting.
+                </p>
+              </div>
+            ) : (
+              <video
+                key={localVideoUrl}
+                className="watch-embed"
+                src={localVideoUrl}
+                controls
+                onError={() => setVideoLoadError(true)}
+              />
+            )
           ) : (
             <div
               ref={ytContainerRef}

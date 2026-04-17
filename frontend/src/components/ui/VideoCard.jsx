@@ -5,7 +5,9 @@ export default function VideoCard({ video, onClick, recommended, isFavourite, on
     <div className={`vcard ${recommended ? 'vcard-recommended' : ''}`} onClick={onClick}>
       <div className={`vcard-thumb ${video.color}`}>
         <span className="vcard-icon">{video.icon}</span>
-        <span className="vcard-duration">{video.duration}</span>
+        {video.duration?.trim() && (
+          <span className="vcard-duration">{video.duration}</span>
+        )}
         {onToggleFavourite && (
           <button
             className={`vcard-fav ${isFavourite ? 'vcard-fav-active' : ''}`}
