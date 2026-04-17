@@ -90,20 +90,31 @@ export default function WatchPage({ params }) {
   const defaultTitle = videoFromParams?.title || 'But what is a neural network? \u2014 3Blue1Brown'
 
   const [chatWidth, setChatWidth] = useState(400)
+  const [chatHeight, setChatHeight] = useState(null)
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth <= 900)
   const isResizing = useRef(false)
   const ytPlayerRef = useRef(null)
   const ytReadyRef = useRef(false)
   const ytContainerRef = useRef(null)
 
   function handleResizerMouseDown(e) {
+    const isMobile = window.innerWidth <= 900
     isResizing.current = true
-    document.body.style.cursor = 'col-resize'
+    document.body.style.cursor = isMobile ? 'row-resize' : 'col-resize'
     document.body.style.userSelect = 'none'
 
     function onMouseMove(e) {
       if (!isResizing.current) return
-      const newWidth = window.innerWidth - e.clientX
-      setChatWidth(Math.min(700, Math.max(280, newWidth)))
+      if (isMobile) {
+        const layoutEl = e.target.closest?.('.watch-layout') ?? document.querySelector('.watch-layout')
+        const layoutRect = layoutEl?.getBoundingClientRect()
+        if (!layoutRect) return
+        const newHeight = layoutRect.bottom - e.clientY
+        setChatHeight(Math.min(window.innerHeight * 0.8, Math.max(120, newHeight)))
+      } else {
+        const newWidth = window.innerWidth - e.clientX
+        setChatWidth(Math.min(700, Math.max(280, newWidth)))
+      }
     }
 
     function onMouseUp() {
@@ -181,6 +192,16 @@ export default function WatchPage({ params }) {
   useEffect(() => {
     if (params?.id) recordVisit(params.id)
   }, [params?.id])
+
+  useEffect(() => {
+    function onResize() {
+      const mobile = window.innerWidth <= 900
+      setIsMobile(mobile)
+      if (!mobile) setChatHeight(null)
+    }
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
 
   useEffect(() => {
     const vid = uploadedVideoId || videoId
@@ -448,15 +469,16 @@ export default function WatchPage({ params }) {
           )}
         </div>
 
-        <div className="watch-details">
-          <div className="watch-title">{videoTitle}</div>
-          <div className="watch-segments">
-            <div className="watch-seg-label">Segments</div>
-            <div className="watch-seg-list">
-              {['0:00 Introduction', '1:42 Neurons & layers', '4:10 Weights & biases', '7:30 Activation functions', '11:05 Training overview'].map((s, i) => (
-                <button key={i} className={`watch-seg-chip ${i === 1 ? 'active' : ''}`}>{s}</button>
-              ))}
-            </div>
+      </div>
+
+      <div className="watch-details">
+        <div className="watch-title">{videoTitle}</div>
+        <div className="watch-segments">
+          <div className="watch-seg-label">Segments</div>
+          <div className="watch-seg-list">
+            {['0:00 Introduction', '1:42 Neurons & layers', '4:10 Weights & biases', '7:30 Activation functions', '11:05 Training overview'].map((s, i) => (
+              <button key={i} className={`watch-seg-chip ${i === 1 ? 'active' : ''}`}>{s}</button>
+            ))}
           </div>
         </div>
       </div>
@@ -464,7 +486,7 @@ export default function WatchPage({ params }) {
       <div className="watch-resizer" onMouseDown={handleResizerMouseDown} />
 
       {/* Right panel - chat */}
-      <div className="watch-right" style={{ width: chatWidth, flex: 'none' }}>
+      <div className="watch-right" style={{ width: chatWidth, flex: 'none', ...(isMobile && chatHeight ? { height: chatHeight } : {}) }}>
         <div className="watch-chat-header">
           <div className="watch-chat-header-left">
             <div className="watch-chat-avatar">AI</div>
