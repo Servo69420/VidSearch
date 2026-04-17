@@ -60,7 +60,7 @@ CREATE TABLE IF NOT EXISTS transcriptions (
 );
 
 -- Semantically chunked transcript pieces.
--- Dimension 384 = bge-small / MiniLM.
+-- Dimension 1024 = perplexity/pplx-embed-v1-0.6b.
 CREATE TABLE IF NOT EXISTS transcript_chunks (
     id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     transcription_id  UUID NOT NULL REFERENCES transcriptions(id) ON DELETE CASCADE,
@@ -71,8 +71,8 @@ CREATE TABLE IF NOT EXISTS transcript_chunks (
     summary           TEXT,
     role              TEXT,
     keywords          TEXT[] DEFAULT '{}',
-    embedding         VECTOR(384),
-    summary_embedding VECTOR(384),
+    embedding         VECTOR(1024),
+    summary_embedding VECTOR(1024),
     created_at        TIMESTAMPTZ DEFAULT now(),
     UNIQUE (transcription_id, idx)
 );
@@ -109,4 +109,3 @@ CREATE TABLE IF NOT EXISTS chat_history (
         (video_id IS NULL AND user_video_id IS NOT NULL)
     )
 );
-

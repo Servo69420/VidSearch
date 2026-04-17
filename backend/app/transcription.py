@@ -1,16 +1,32 @@
 import asyncio
 import json
+import logging
 from abc import ABC, abstractmethod
 
 import whisper
 from youtube_transcript_api import YouTubeTranscriptApi
 
+from app.openrouter_embedder import DEFAULT_EMBEDDING_MODEL, OpenRouterEmbedder
+from app.rag import RAGPipeline
 from app.video_to_audio import delete_temporary_audio_file, video_to_audio
 from app.youtube import (
     YOUTUBE_ID_SQL_EXPR,
     extract_video_id,
     resolve_or_create_yt_video,
 )
+
+
+logger = logging.getLogger(__name__)
+
+
+async def _run_phase_one_pipeline(db, transcription_id: str, embed_model: str) -> None:
+    logger.info(
+        "Starting phase-1 indexing for transcription %s with %s",
+        transcription_id,
+        embed_model,
+    )
+    pipeline = RAGPipeline(db, embedder=OpenRouterEmbedder(model=embed_model))
+    await pipeline.process(transcription_id)
 
 
 class BaseTranscriber(ABC):
@@ -23,7 +39,12 @@ class YouTubeTranscriber(BaseTranscriber):
     def __get_video_id(self, url: str) -> str | None:
         return extract_video_id(url)
 
-    async def transcribe(self, source: str, db) -> dict:
+    async def transcribe(
+        self,
+        source: str,
+        db,
+        embed_model: str = DEFAULT_EMBEDDING_MODEL,
+    ) -> dict:
         video_id = self.__get_video_id(source)
         if not video_id:
             raise ValueError("Invalid YouTube URL")
@@ -38,6 +59,24 @@ class YouTubeTranscriber(BaseTranscriber):
             video_id,
         )
         if existing:
+            chunk_count = await db.fetchval(
+                "SELECT COUNT(*) FROM transcript_chunks WHERE transcription_id = $1::uuid",
+                existing["id"],
+            )
+            if int(chunk_count or 0) == 0:
+                await _run_phase_one_pipeline(
+                    db,
+                    str(existing["id"]),
+                    embed_model,
+                )
+                logger.info(
+                    "Re-indexed existing YouTube transcription %s",
+                    existing["id"],
+                )
+                existing = await db.fetchrow(
+                    "SELECT * FROM transcriptions WHERE id = $1::uuid",
+                    existing["id"],
+                )
             return dict(existing)
 
         transcript = YouTubeTranscriptApi().fetch(video_id)
@@ -51,10 +90,18 @@ class YouTubeTranscriber(BaseTranscriber):
 
         row = await db.fetchrow(
             "INSERT INTO transcriptions (video_id, full_text, segments, model_version, status) "
-            "VALUES ($1, $2, $3::jsonb, 'youtube-transcript-api', 'ready') RETURNING *",
+            "VALUES ($1, $2, $3::jsonb, $4, 'pending') RETURNING *",
             video.yt_video_id,
             full_text,
             json.dumps(segments),
+            f"youtube-transcript-api+{embed_model}",
+        )
+
+        await _run_phase_one_pipeline(db, str(row["id"]), embed_model)
+        logger.info("Indexed new YouTube transcription %s", row["id"])
+        row = await db.fetchrow(
+            "SELECT * FROM transcriptions WHERE id = $1::uuid",
+            row["id"],
         )
 
         return dict(row)
@@ -109,8 +156,16 @@ class TranscriberFactory:
         return cls._video
 
 
-async def transcribe_video_yt(url: str, db) -> dict:
-    return await TranscriberFactory._yt.transcribe(url, db)
+async def transcribe_video_yt(
+    url: str,
+    db,
+    embed_model: str = DEFAULT_EMBEDDING_MODEL,
+) -> dict:
+    return await TranscriberFactory._yt.transcribe(
+        url,
+        db,
+        embed_model=embed_model,
+    )
 
 
 async def transcribe_uploaded_video(
