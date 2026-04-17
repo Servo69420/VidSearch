@@ -125,7 +125,15 @@ async def ask(
                     user_id, video_id, user_video_id, user_message,
                 )
 
-            assistant_message = data["choices"][0]["message"].get("content")
+            msg = data["choices"][0]["message"]
+            assistant_message = msg.get("content")
+            if not assistant_message:
+                tool_calls = msg.get("tool_calls") or []
+                if tool_calls:
+                    assistant_message = ", ".join(
+                        f"*{tc['function']['name'].replace('_', ' ')}*"
+                        for tc in tool_calls
+                    )
             if can_save and assistant_message:
                 await db.execute(
                     "INSERT INTO chat_history "

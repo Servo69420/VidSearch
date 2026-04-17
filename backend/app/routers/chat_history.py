@@ -53,8 +53,6 @@ async def get_history_videos(
     current_user=Depends(get_current_user),
     db=Depends(get_db),
 ):
-    from pathlib import Path as PyPath
-
     rows = await db.fetch(
         """SELECT
                ch.video_id,
@@ -81,12 +79,11 @@ async def get_history_videos(
     )
     result = []
     for r in rows:
-        video_url = None
-        if r["uv_file_path"]:
-            video_url = f"/uploads/{PyPath(r['uv_file_path']).name}"
+        uv_id = str(r["user_video_id"]) if r["user_video_id"] else None
+        video_url = f"/files/video/{uv_id}" if uv_id else None
         result.append({
             "video_id": str(r["video_id"]) if r["video_id"] else None,
-            "user_video_id": str(r["user_video_id"]) if r["user_video_id"] else None,
+            "user_video_id": uv_id,
             "video_title": r["video_title"],
             "last_message_at": r["last_message_at"].isoformat(),
             "message_count": r["message_count"],
