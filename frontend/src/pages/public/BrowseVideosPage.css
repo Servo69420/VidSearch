@@ -90,6 +90,12 @@
 .topic-btn-fav { color: #dc2626; border-color: #fca5a5; }
 .topic-btn-fav:hover { border-color: #dc2626; color: #dc2626; }
 .topic-btn-fav.active { background: #dc2626; border-color: #dc2626; color: white; }
+[data-theme="dark"] .topic-btn-fav { border-color: rgba(220, 38, 38, 0.4); }
+
+.topic-btn-mine { color: var(--teal); border-color: var(--teal-100); }
+.topic-btn-mine:hover { border-color: var(--teal); color: var(--teal); }
+.topic-btn-mine.active { background: var(--teal); border-color: var(--teal); color: white; }
+[data-theme="dark"] .topic-btn-mine { color: #5eead4; border-color: rgba(15,118,110,0.3); }
 
 .browse-grid {
   display: grid;

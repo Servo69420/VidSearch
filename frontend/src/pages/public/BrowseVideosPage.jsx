@@ -1,17 +1,24 @@
 import { useState, useMemo } from 'react'
 import { ALL_VIDEOS, TOPICS } from '../../data/data'
 import { useWatchLater } from '../../contexts/WatchLaterContext'
+import { useUserVideos } from '../../contexts/UserVideosContext'
 import VideoCard from '../../components/ui/VideoCard'
 import SearchBar from '../../components/ui/SearchBar'
 import './BrowseVideosPage.css'
 
 export default function BrowseVideosPage() {
   const { toggle, isFavourite } = useWatchLater()
+  const { userVideos } = useUserVideos()
+
   const [search, setSearch] = useState('')
   const [activeTopic, setActiveTopic] = useState(() => {
     if (sessionStorage.getItem('openFavourite')) {
       sessionStorage.removeItem('openFavourite')
       return 'Favourite'
+    }
+    if (sessionStorage.getItem('openMyVideos')) {
+      sessionStorage.removeItem('openMyVideos')
+      return 'My Videos'
     }
     const topic = sessionStorage.getItem('openTopic')
     if (topic) {
@@ -23,6 +30,25 @@ export default function BrowseVideosPage() {
   const [sort, setSort] = useState('title')
 
   const filtered = useMemo(() => {
+    if (activeTopic === 'My Videos') {
+      let vids = userVideos.map(v => ({
+        id: v.id,
+        title: v.title,
+        subject: v.type === 'youtube' ? 'YouTube Video' : 'Uploaded File',
+        color: v.type === 'youtube' ? 'thumb-sky' : 'thumb-teal',
+        icon: '▶',
+        duration: '',
+        _isUserVideo: true,
+        _userVideoData: v,
+      }))
+      if (search.trim()) {
+        const q = search.toLowerCase()
+        vids = vids.filter(v => v.title.toLowerCase().includes(q))
+      }
+      if (sort === 'title') vids.sort((a, b) => a.title.localeCompare(b.title))
+      return vids
+    }
+
     let vids = [...ALL_VIDEOS]
 
     if (activeTopic === 'Favourite') {
@@ -47,7 +73,16 @@ export default function BrowseVideosPage() {
     if (sort === 'subject') vids.sort((a, b) => a.subject.localeCompare(b.subject))
 
     return vids
-  }, [search, activeTopic, sort, isFavourite])
+  }, [search, activeTopic, sort, isFavourite, userVideos])
+
+  function handleVideoClick(v) {
+    if (v._isUserVideo) {
+      sessionStorage.setItem('openUserVideo', JSON.stringify(v._userVideoData))
+      window.location.hash = '#/watch'
+    } else {
+      window.location.hash = `#/watch/${v.id}`
+    }
+  }
 
   return (
     <div className="browse-page">
@@ -89,6 +124,12 @@ export default function BrowseVideosPage() {
           >
             ♥ Favourites
           </button>
+          <button
+            className={`topic-btn topic-btn-mine ${activeTopic === 'My Videos' ? 'active' : ''}`}
+            onClick={() => setActiveTopic('My Videos')}
+          >
+            ▶ My Videos ({userVideos.length})
+          </button>
           {TOPICS.map(t => (
             <button
               key={t.label}
@@ -102,9 +143,23 @@ export default function BrowseVideosPage() {
 
         {filtered.length === 0 ? (
           <div className="browse-empty">
-            <div className="browse-empty-icon">{activeTopic === 'Favourite' ? '♡' : '🔍'}</div>
-            <h4>{activeTopic === 'Favourite' ? 'No favourites yet' : 'No videos found'}</h4>
-            <p>{activeTopic === 'Favourite' ? 'Click the ♡ on any video to add it to your favourites.' : 'Try adjusting your search or filter criteria.'}</p>
+            <div className="browse-empty-icon">
+              {activeTopic === 'Favourite' ? '♡' : activeTopic === 'My Videos' ? '▶' : '🔍'}
+            </div>
+            <h4>
+              {activeTopic === 'Favourite'
+                ? 'No favourites yet'
+                : activeTopic === 'My Videos'
+                ? 'No personal videos yet'
+                : 'No videos found'}
+            </h4>
+            <p>
+              {activeTopic === 'Favourite'
+                ? 'Click the ♡ on any video to add it to your favourites.'
+                : activeTopic === 'My Videos'
+                ? 'Load a YouTube URL or upload a video file in the workspace to add your own videos.'
+                : 'Try adjusting your search or filter criteria.'}
+            </p>
           </div>
         ) : (
           <div className="browse-grid">
@@ -112,9 +167,9 @@ export default function BrowseVideosPage() {
               <VideoCard
                 key={v.id}
                 video={v}
-                onClick={() => { window.location.hash = `#/watch/${v.id}` }}
-                isFavourite={isFavourite(v.id)}
-                onToggleFavourite={toggle}
+                onClick={() => handleVideoClick(v)}
+                isFavourite={!v._isUserVideo && isFavourite(v.id)}
+                onToggleFavourite={v._isUserVideo ? null : toggle}
               />
             ))}
           </div>
@@ -123,6 +178,8 @@ export default function BrowseVideosPage() {
         <div className="browse-results-count">
           {activeTopic === 'Favourite'
             ? `${filtered.length} favourited video${filtered.length !== 1 ? 's' : ''}`
+            : activeTopic === 'My Videos'
+            ? `${filtered.length} personal video${filtered.length !== 1 ? 's' : ''}`
             : `Showing ${filtered.length} of ${ALL_VIDEOS.length} videos`}
         </div>
       </div>

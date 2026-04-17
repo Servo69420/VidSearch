@@ -65,3 +65,8 @@
 .markdown-message h1 { font-size: 1.4em; }
 .markdown-message h2 { font-size: 1.25em; }
 .markdown-message h3 { font-size: 1.1em; }
+
+[data-theme="dark"] .markdown-message code,
+[data-theme="dark"] .markdown-message pre {
+  background-color: rgba(255, 255, 255, 0.08);
+}

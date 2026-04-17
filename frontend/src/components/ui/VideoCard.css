@@ -111,3 +111,7 @@
   background: #ede9fe;
   color: #7c3aed;
 }
+
+[data-theme="dark"] .thumb-rose   { background: rgba(159,18,57,0.15);  color: #fda4af; }
+[data-theme="dark"] .thumb-sky    { background: rgba(3,105,161,0.15);  color: #7dd3fc; }
+[data-theme="dark"] .thumb-violet { background: rgba(124,58,237,0.15); color: #c4b5fd; }
