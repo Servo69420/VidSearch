@@ -1,10 +1,12 @@
 import httpx
+import uuid as _uuid
 from pydantic import BaseModel
 from app.config import settings
 from fastapi import APIRouter, HTTPException, Depends
 from app.dependencies import get_current_user
 from app.database import get_db
 from app.routers.video_player_tools import VIDEO_PLAYER_TOOLS
+from app.youtube import normalize_youtube_ref, resolve_or_create_yt_video
 
 
 router = APIRouter()
@@ -15,12 +17,50 @@ class Chatrequest(BaseModel):
     message: list[dict]
 
 
+def is_uuid(val: str) -> bool:
+    try:
+        _uuid.UUID(val)
+        return True
+    except (ValueError, AttributeError):
+        return False
+
+
 @router.post("/ask")
 async def ask(
     request: Chatrequest,
     current_user=Depends(get_current_user),
     db=Depends(get_db),
 ):
+    user_id = current_user["sub"]
+    if is_uuid(request.video_id):
+        user_video_exists = await db.fetchval(
+            """SELECT id
+               FROM user_videos
+               WHERE id = $1::uuid AND user_id = $2::uuid""",
+            request.video_id,
+            user_id,
+        )
+        if user_video_exists:
+            video_id = None
+            user_video_id = request.video_id
+        else:
+            yt_video_exists = await db.fetchval(
+                "SELECT id FROM yt_videos WHERE id = $1::uuid",
+                request.video_id,
+            )
+            if not yt_video_exists:
+                raise HTTPException(status_code=404, detail="Video not found")
+            video_id = request.video_id
+            user_video_id = None
+    else:
+        yt_ref = normalize_youtube_ref(request.video_id)
+        if not yt_ref:
+            raise HTTPException(status_code=400, detail="Invalid video identifier")
+
+        resolved = await resolve_or_create_yt_video(db, yt_ref.video_id)
+        video_id = resolved.yt_video_id
+        user_video_id = None
+
     openai_messages = [
         {
             "role": "system",
@@ -67,33 +107,6 @@ async def ask(
                     detail="Error from AI provider.",
                 )
             data = result.json()
-
-            import uuid as _uuid
-
-            def is_uuid(val):
-                try:
-                    _uuid.UUID(val)
-                    return True
-                except (ValueError, AttributeError):
-                    return False
-
-            user_id = current_user["sub"]
-
-            if is_uuid(request.video_id):
-                video_id = None
-                user_video_id = request.video_id
-            else:
-                # YouTube ID — upsert into yt_videos so we always have a UUID
-                yt_uuid = await db.fetchval(
-                    """INSERT INTO yt_videos (source_type, source_url)
-                       VALUES ('youtube', $1)
-                       ON CONFLICT (source_url)
-                       DO UPDATE SET source_url = EXCLUDED.source_url
-                       RETURNING id""",
-                    f"https://www.youtube.com/watch?v={request.video_id}",
-                )
-                video_id = str(yt_uuid)
-                user_video_id = None
 
             can_save = True
 

@@ -15,6 +15,8 @@ from unittest.mock import MagicMock
 # inside TranscriberFactory, which would fail without a GPU / model files.
 mock_whisper = MagicMock()
 sys.modules["whisper"] = mock_whisper
+sys.modules["youtube_transcript_api"] = MagicMock()
+sys.modules["ffmpeg"] = MagicMock()
 
 from app.transcription import (  # noqa: E402
     TranscriberFactory,
@@ -74,6 +76,10 @@ class TestTranscriberFactory(unittest.TestCase):
 
     def test_youtu_be_returns_yt_transcriber(self):
         t = TranscriberFactory.get_transcriber("https://youtu.be/abc")
+        self.assertIsInstance(t, YouTubeTranscriber)
+
+    def test_plain_youtube_id_returns_yt_transcriber(self):
+        t = TranscriberFactory.get_transcriber("dQw4w9WgXcQ")
         self.assertIsInstance(t, YouTubeTranscriber)
 
     def test_file_path_returns_video_transcriber(self):

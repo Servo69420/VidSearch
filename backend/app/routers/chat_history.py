@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends
 from app.database import get_db
 from app.dependencies import get_current_user
+from app.youtube import YOUTUBE_ID_SQL_EXPR, normalize_youtube_ref
 
 router = APIRouter()
 
@@ -74,16 +75,17 @@ async def get_chat_history(
         except (ValueError, AttributeError):
             return False
 
-    yt_uuid = await db.fetchval(
-        "SELECT id FROM yt_videos WHERE source_url = $1",
-        f"https://www.youtube.com/watch?v={video_id}",
-    )
-    if yt_uuid:
+    yt_ref = normalize_youtube_ref(video_id)
+    if yt_ref:
         rows = await db.fetch(
-            """SELECT role, content FROM chat_history
-               WHERE user_id = $1::uuid AND video_id = $2
-               ORDER BY created_at ASC""",
-            current_user["sub"], yt_uuid,
+            f"""SELECT ch.role, ch.content
+                FROM chat_history ch
+                JOIN yt_videos yv ON yv.id = ch.video_id
+                WHERE ch.user_id = $1::uuid
+                  AND {YOUTUBE_ID_SQL_EXPR} = $2
+                ORDER BY ch.created_at ASC""",
+            current_user["sub"],
+            yt_ref.video_id,
         )
     elif is_uuid(video_id):
         rows = await db.fetch(
