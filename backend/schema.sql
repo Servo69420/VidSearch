@@ -44,7 +44,7 @@ CREATE TABLE IF NOT EXISTS transcriptions (
     segments      JSONB NOT NULL,
     language      TEXT DEFAULT '',
     status        TEXT NOT NULL DEFAULT 'pending'
-                  CHECK (status IN ('pending', 'chunking', 'summarizing', 'ready', 'failed')),
+                  CHECK (status IN ('pending', 'chunking', 'summarizing', 'ready', 'failed', 'cancel')),
     created_at    TIMESTAMPTZ DEFAULT now(),
     CHECK (
         (video_id IS NOT NULL AND user_video_id IS NULL) OR

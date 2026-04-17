@@ -1,3 +1,4 @@
+import asyncio
 import json
 from abc import ABC, abstractmethod
 from urllib.parse import parse_qs, urlparse
@@ -52,8 +53,8 @@ class YouTubeTranscriber(BaseTranscriber):
         )
 
         row = await db.fetchrow(
-            "INSERT INTO transcriptions (video_id, full_text, segments) "
-            "VALUES ($1, $2, $3::jsonb) RETURNING *",
+            "INSERT INTO transcriptions (video_id, full_text, segments, status) "
+            "VALUES ($1, $2, $3::jsonb, 'ready') RETURNING *",
             video["id"], full_text, json.dumps(segments),
         )
 
@@ -71,9 +72,9 @@ class VideoFileTranscriber(BaseTranscriber):
     async def transcribe(
         self, source: str, db, user_video_id: str = None
     ) -> dict:
-        wav_path = video_to_audio(source)
+        wav_path = await asyncio.to_thread(video_to_audio, source)
         try:
-            result = self.__model.transcribe(wav_path)
+            result = await asyncio.to_thread(self.__model.transcribe, wav_path)
             full_text = result["text"]
             segments = [
                 {"start": s["start"], "end": s["end"], "text": s["text"]}
@@ -83,15 +84,15 @@ class VideoFileTranscriber(BaseTranscriber):
 
             row = await db.fetchrow(
                 "INSERT INTO transcriptions "
-                "(user_video_id, full_text, segments, language) "
-                "VALUES ($1, $2, $3::jsonb, $4) RETURNING *",
-                user_video_id or source,
+                "(user_video_id, full_text, segments, language, status) "
+                "VALUES ($1, $2, $3::jsonb, $4, 'ready') RETURNING *",
+                user_video_id,
                 full_text,
                 json.dumps(segments),
                 language,
             )
         finally:
-            delete_temporary_audio_file(wav_path)
+            await asyncio.to_thread(delete_temporary_audio_file, wav_path)
 
         return dict(row)
 

@@ -44,16 +44,17 @@ class VideoFileUploader(BaseFileUploader):
         ext = Path(file.filename).suffix or ".mp4"
         dest = self.__upload_dir / f"{uuid.uuid4().hex}{ext}"
         size = 0
+        too_large = False
         with open(dest, "wb") as f:
             while chunk := await file.read(1024 * 1024):
                 size += len(chunk)
                 if size > self.__max_size:
-                    dest.unlink(missing_ok=True)
-                    raise HTTPException(
-                        status_code=413,
-                        detail="File too large. Max 500 MB.",
-                    )
+                    too_large = True
+                    break
                 f.write(chunk)
+        if too_large:
+            dest.unlink(missing_ok=True)
+            raise HTTPException(status_code=413, detail="File too large. Max 500 MB.")
         return dest
 
 

@@ -1,10 +1,12 @@
+import traceback
 from typing import Optional
 
-from fastapi import APIRouter, File, Request, UploadFile
+from fastapi import APIRouter, BackgroundTasks, File, Request, UploadFile
 
 from app.database import get_pool
 from app.file_input import _uploader
 from app.models.auth_service import AuthService
+from app.transcription import transcribe_uploaded_video
 
 router = APIRouter(prefix="/files", tags=["files"])
 _auth_service = AuthService()
@@ -23,8 +25,20 @@ async def _optional_user_id(request: Request) -> Optional[str]:
         return None
 
 
+async def _run_transcription(file_path: str, user_video_id: str) -> None:
+    try:
+        async with get_pool().acquire() as db:
+            await transcribe_uploaded_video(file_path, user_video_id, db)
+    except Exception:
+        traceback.print_exc()
+
+
 @router.post("/upload_video")
-async def upload_video(request: Request, file: UploadFile = File(...)):
+async def upload_video(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+):
     _uploader.validate(file)
     dest = await _uploader.save(file)
 
@@ -40,7 +54,10 @@ async def upload_video(request: Request, file: UploadFile = File(...)):
                 )
                 user_video_id = str(row["id"])
         except Exception:
-            pass
+            traceback.print_exc()
+
+    if user_video_id:
+        background_tasks.add_task(_run_transcription, str(dest), user_video_id)
 
     return {
         "filename": dest.name,

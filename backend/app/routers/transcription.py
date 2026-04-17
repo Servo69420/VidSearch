@@ -56,7 +56,7 @@ async def transcribe_upload(
     file_path.write_bytes(data)
 
     user_video = await db.fetchrow(
-        "INSERT INTO user_videos (user_id, original_filename, file_path) "
+        "INSERT INTO user_videos (user_id, file_name, file_path) "
         "VALUES ($1::uuid, $2, $3) RETURNING *",
         current_user["sub"], file.filename, str(file_path),
     )
@@ -67,6 +67,8 @@ async def transcribe_upload(
         )
         return result
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         raise HTTPException(
             status_code=500, detail=f"Transcription failed: {str(e)}"
         )
