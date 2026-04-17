@@ -162,6 +162,41 @@
   border: none;
 }
 
+/* No-video fallback */
+.watch-no-video {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 24px;
+  text-align: center;
+  background: var(--surface);
+  color: var(--text-secondary);
+}
+
+.watch-no-video-icon {
+  font-size: 36px;
+  opacity: 0.5;
+}
+
+.watch-no-video-title {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text);
+  margin: 0;
+}
+
+.watch-no-video-sub {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  max-width: 280px;
+  line-height: 1.5;
+  margin: 0;
+}
+
 /* Details */
 .watch-title {
   font-size: var(--text-md);
