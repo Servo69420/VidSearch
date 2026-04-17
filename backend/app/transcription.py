@@ -1,12 +1,16 @@
 import asyncio
 import json
 from abc import ABC, abstractmethod
-from urllib.parse import parse_qs, urlparse
 
 import whisper
 from youtube_transcript_api import YouTubeTranscriptApi
 
 from app.video_to_audio import delete_temporary_audio_file, video_to_audio
+from app.youtube import (
+    YOUTUBE_ID_SQL_EXPR,
+    extract_video_id,
+    resolve_or_create_yt_video,
+)
 
 
 class BaseTranscriber(ABC):
@@ -17,12 +21,7 @@ class BaseTranscriber(ABC):
 
 class YouTubeTranscriber(BaseTranscriber):
     def __get_video_id(self, url: str) -> str | None:
-        parsed = urlparse(url)
-        if parsed.hostname in ["www.youtube.com", "youtube.com"]:
-            return parse_qs(parsed.query).get("v", [None])[0]
-        if parsed.hostname == "youtu.be":
-            return parsed.path.lstrip("/")
-        return None
+        return extract_video_id(url)
 
     async def transcribe(self, source: str, db) -> dict:
         video_id = self.__get_video_id(source)
@@ -30,10 +29,13 @@ class YouTubeTranscriber(BaseTranscriber):
             raise ValueError("Invalid YouTube URL")
 
         existing = await db.fetchrow(
-            "SELECT t.* FROM transcriptions t "
-            "JOIN yt_videos v ON t.video_id = v.id "
-            "WHERE v.source_url = $1",
-            source,
+            f"""SELECT t.*
+                FROM transcriptions t
+                JOIN yt_videos v ON t.video_id = v.id
+                WHERE {YOUTUBE_ID_SQL_EXPR} = $1
+                ORDER BY t.created_at DESC
+                LIMIT 1""",
+            video_id,
         )
         if existing:
             return dict(existing)
@@ -45,17 +47,14 @@ class YouTubeTranscriber(BaseTranscriber):
             for e in transcript
         ]
 
-        video = await db.fetchrow(
-            "INSERT INTO yt_videos (source_type, source_url) VALUES ('youtube', $1) "
-            "ON CONFLICT (source_url) DO UPDATE SET source_url = EXCLUDED.source_url "
-            "RETURNING *",
-            source,
-        )
+        video = await resolve_or_create_yt_video(db, source)
 
         row = await db.fetchrow(
             "INSERT INTO transcriptions (video_id, full_text, segments, status) "
             "VALUES ($1, $2, $3::jsonb, 'ready') RETURNING *",
-            video["id"], full_text, json.dumps(segments),
+            video.yt_video_id,
+            full_text,
+            json.dumps(segments),
         )
 
         return dict(row)
@@ -103,14 +102,13 @@ class TranscriberFactory:
 
     @classmethod
     def get_transcriber(cls, source: str) -> BaseTranscriber:
-        if "youtube.com" in source or "youtu.be" in source:
+        if extract_video_id(source):
             return cls._yt
         return cls._video
 
 
 async def transcribe_video_yt(url: str, db) -> dict:
-    transcriber = TranscriberFactory.get_transcriber(url)
-    return await transcriber.transcribe(url, db)
+    return await TranscriberFactory._yt.transcribe(url, db)
 
 
 async def transcribe_uploaded_video(

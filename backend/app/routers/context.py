@@ -1,6 +1,8 @@
 import uuid as _uuid
 from typing import Any
 
+from app.youtube import YOUTUBE_ID_SQL_EXPR, normalize_youtube_ref
+
 
 def _is_uuid(value: str) -> bool:
     try:
@@ -29,17 +31,20 @@ async def get_transcript(video_id: str, db) -> dict[str, Any] | None:
             video_id,
         )
     else:
-        source_url = f"https://www.youtube.com/watch?v={video_id}"
+        ref = normalize_youtube_ref(video_id)
+        if not ref:
+            return None
+
         row = await db.fetchrow(
-            """
+            f"""
             SELECT t.*
             FROM transcriptions t
             JOIN yt_videos v ON v.id = t.video_id
-            WHERE v.source_url = $1
+            WHERE {YOUTUBE_ID_SQL_EXPR} = $1
             ORDER BY t.created_at DESC
             LIMIT 1
             """,
-            source_url,
+            ref.video_id,
         )
 
     return dict(row) if row else None
