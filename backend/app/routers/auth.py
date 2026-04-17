@@ -40,9 +40,13 @@ async def me(
     db: Connection = Depends(get_db),
 ):
     row = await db.fetchrow(
-        "SELECT id, username, email, name, surname, avatar_url, "
-        "subscription, hobbies, created_at "
-        "FROM users WHERE id = $1::uuid",
+        "SELECT u.id, u.username, u.email, u.name, u.surname, u.avatar_url, "
+        "u.subscription, u.created_at, "
+        "COALESCE(array_agg(h.hobby) FILTER (WHERE h.hobby IS NOT NULL), '{}') AS hobbies "
+        "FROM users u "
+        "LEFT JOIN user_hobbies h ON h.user_id = u.id "
+        "WHERE u.id = $1::uuid "
+        "GROUP BY u.id",
         current_user["sub"],
     )
     if not row:

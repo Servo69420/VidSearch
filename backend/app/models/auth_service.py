@@ -141,14 +141,19 @@ class AuthService(BaseAuthService):
     ) -> dict:
         hashed = self._hasher.hash(password)
         try:
-            await db.execute(
-                "INSERT INTO users (username, email, password_hash, hobbies) "
-                "VALUES ($1, $2, $3, $4)",
-                username,
-                email,
-                hashed,
-                hobbies,
-            )
+            async with db.transaction():
+                user_id = await db.fetchval(
+                    "INSERT INTO users (username, email, password_hash) "
+                    "VALUES ($1, $2, $3) RETURNING id",
+                    username,
+                    email,
+                    hashed,
+                )
+                if hobbies:
+                    await db.executemany(
+                        "INSERT INTO user_hobbies (user_id, hobby) VALUES ($1, $2)",
+                        [(user_id, h) for h in hobbies],
+                    )
         except UniqueViolationError:
             raise HTTPException(
                 status_code=400, detail="Username or email already taken."

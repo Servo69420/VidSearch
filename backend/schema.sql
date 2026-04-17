@@ -13,8 +13,13 @@ CREATE TABLE IF NOT EXISTS users (
     surname       TEXT DEFAULT '',
     avatar_url    TEXT DEFAULT '',
     subscription  TEXT DEFAULT 'free',
-    created_at    TIMESTAMPTZ DEFAULT now(),
-    hobbies       TEXT[] DEFAULT '{}'
+    created_at    TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS user_hobbies (
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    hobby   TEXT NOT NULL,
+    PRIMARY KEY (user_id, hobby)
 );
 
 -- General table for videos (YouTube URLs and platform uploads)
