@@ -1,3 +1,4 @@
+import logging
 import httpx
 import uuid as _uuid
 from pydantic import BaseModel
@@ -5,11 +6,20 @@ from app.config import settings
 from fastapi import APIRouter, HTTPException, Depends
 from app.dependencies import get_current_user
 from app.database import get_db
+from app.routers.context import search_video_context
 from app.routers.video_player_tools import VIDEO_PLAYER_TOOLS
 from app.youtube import normalize_youtube_ref, resolve_or_create_yt_video
 
 
+# Model switches for phase 1.
+# Change these two values to swap chat and embedding models.
+CHAT_MODEL = "google/gemini-2.5-flash-lite"
+EMBEDDING_MODEL = "perplexity/pplx-embed-v1-0.6b"
+RETRIEVAL_TOP_K = 6
+
+
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 class Chatrequest(BaseModel):
@@ -23,6 +33,29 @@ def is_uuid(val: str) -> bool:
         return True
     except (ValueError, AttributeError):
         return False
+
+
+def _format_seconds(seconds: float) -> str:
+    total_seconds = max(int(seconds), 0)
+    minutes, secs = divmod(total_seconds, 60)
+    hours, minutes = divmod(minutes, 60)
+    if hours:
+        return f"{hours}:{minutes:02d}:{secs:02d}"
+    return f"{minutes}:{secs:02d}"
+
+
+def _grounding_message(chunks: list[dict]) -> str:
+    lines = [
+        "Grounding context from retrieved transcript chunks:",
+        "Use this context first when answering video-content questions.",
+        "If you call seek_video, only use timestamps present below.",
+    ]
+    for chunk in chunks:
+        lines.append(
+            f"[{_format_seconds(chunk['start_s'])} - "
+            f"{_format_seconds(chunk['end_s'])}] {chunk['text']}"
+        )
+    return "\n".join(lines)
 
 
 @router.post("/ask")
@@ -61,6 +94,35 @@ async def ask(
         video_id = resolved.yt_video_id
         user_video_id = None
 
+    user_message = next(
+        (
+            m.get("content")
+            for m in reversed(request.message)
+            if m.get("role") == "user" and isinstance(m.get("content"), str)
+        ),
+        None,
+    )
+
+    retrieved_chunks: list[dict] = []
+    if user_message:
+        try:
+            retrieved_chunks = await search_video_context(
+                request.video_id,
+                user_message,
+                db,
+                embed_model=EMBEDDING_MODEL,
+                top_k=RETRIEVAL_TOP_K,
+            )
+            logger.info(
+                "Chat grounding retrieved %s chunks (video_id=%s)",
+                len(retrieved_chunks),
+                request.video_id,
+            )
+        except Exception:
+            logger.exception(
+                "Chat grounding failed, continuing without retrieval context"
+            )
+
     openai_messages = [
         {
             "role": "system",
@@ -78,9 +140,20 @@ async def ask(
             ),
         }
     ]
+
+    if retrieved_chunks:
+        openai_messages.append(
+            {
+                "role": "system",
+                "content": _grounding_message(retrieved_chunks),
+            }
+        )
+
     for msg in request.message:
-        if msg["role"] == "user":
-            openai_messages.append({"role": "user", "content": msg["content"]})
+        role = msg.get("role")
+        content = msg.get("content")
+        if role in {"user", "assistant"} and isinstance(content, str):
+            openai_messages.append({"role": role, "content": content})
 
     async with httpx.AsyncClient() as client:
         try:
@@ -91,7 +164,7 @@ async def ask(
                     "content-type": "application/json",
                 },
                 json={
-                    "model": "google/gemini-2.5-flash-lite", #google/gemma-4-31b-it
+                    "model": CHAT_MODEL,
                     "messages": openai_messages,
                     "tools": VIDEO_PLAYER_TOOLS,
                 },
@@ -110,13 +183,6 @@ async def ask(
 
             can_save = True
 
-            user_message = next(
-                (
-                    m["content"] for m in reversed(request.message)
-                    if m["role"] == "user"
-                ),
-                None,
-            )
             if can_save and user_message:
                 await db.execute(
                     "INSERT INTO chat_history "

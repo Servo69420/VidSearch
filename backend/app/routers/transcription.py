@@ -6,6 +6,7 @@ import uuid
 
 from app.database import get_db
 from app.dependencies import get_current_user
+from app.routers.chat import EMBEDDING_MODEL
 from app.transcription import transcribe_video_yt, transcribe_uploaded_video
 
 UPLOAD_DIR = Path(__file__).resolve().parent.parent / "uploads" / "videos"
@@ -25,7 +26,11 @@ async def transcribe_url(
     db=Depends(get_db),
 ):
     try:
-        result = await transcribe_video_yt(body.url, db)
+        result = await transcribe_video_yt(
+            body.url,
+            db,
+            embed_model=EMBEDDING_MODEL,
+        )
         return result
     except ValueError as ve:
         raise HTTPException(status_code=400, detail=str(ve))

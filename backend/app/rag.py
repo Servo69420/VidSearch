@@ -1,4 +1,4 @@
-"""RAG pipeline: chunk → embed → summarize → store.
+"""RAG pipeline: chunk → embed → store.
 
 This module defines the processing stages and the orchestrator that
 turns a raw transcription (full_text + segments JSONB) into searchable
@@ -9,13 +9,14 @@ Usage (called after transcription is complete)::
     pipeline = RAGPipeline(db)
     await pipeline.process(transcription_id)
 """
-#TODO: INCOMPLETE
 from __future__ import annotations
 
 import json
 import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+
+from app.openrouter_embedder import OpenRouterEmbedder
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +57,15 @@ class ProcessedChunk:
     summary_embedding: list[float] | None = None
 
 
+@dataclass(frozen=True)
+class RetrievedChunk:
+    idx: int
+    start_s: float
+    end_s: float
+    text: str
+    score: float
+
+
 # ---------------------------------------------------------------------------
 # Abstract stage interfaces — swap implementations freely
 # ---------------------------------------------------------------------------
@@ -69,7 +79,7 @@ class ChunkingStrategy(ABC):
 
 
 class Embedder(ABC):
-    """Produces a dense vector from text.  Dimension must be 384."""
+    """Produces a dense vector from text.  Dimension must be 1024."""
 
     @abstractmethod
     async def embed(self, texts: list[str]) -> list[list[float]]:
@@ -116,12 +126,10 @@ class FixedWindowChunker(ChunkingStrategy):
 
 
 class PlaceholderEmbedder(Embedder):
-    """Returns zero-vectors.  Replace with a real model (e.g. sentence-
-    transformers ``all-MiniLM-L6-v2`` or ``bge-small-en-v1.5``).
-    """
+    """Returns zero-vectors. Replace with a real model for production."""
 
     async def embed(self, texts: list[str]) -> list[list[float]]:
-        return [[0.0] * 384 for _ in texts]
+        return [[0.0] * 1024 for _ in texts]
 
 
 class PlaceholderSummarizer(Summarizer):
@@ -154,11 +162,13 @@ class RAGPipeline:
         chunker: ChunkingStrategy | None = None,
         embedder: Embedder | None = None,
         summarizer: Summarizer | None = None,
+        embed_batch_size: int = 24,
     ) -> None:
         self._db = db
         self._chunker = chunker or FixedWindowChunker()
-        self._embedder = embedder or PlaceholderEmbedder()
-        self._summarizer = summarizer or PlaceholderSummarizer()
+        self._embedder = embedder or OpenRouterEmbedder()
+        self._summarizer = summarizer
+        self._embed_batch_size = max(embed_batch_size, 1)
 
     # -- public entry point -------------------------------------------------
 
@@ -172,18 +182,71 @@ class RAGPipeline:
             await self._set_status(transcription_id, "chunking")
             segments = await self._load_segments(transcription_id)
             chunks = self._chunker.chunk(segments)
+            logger.info(
+                "RAG chunking complete for %s (segments=%s, chunks=%s)",
+                transcription_id,
+                len(segments),
+                len(chunks),
+            )
 
             await self._set_status(transcription_id, "summarizing")
             processed = await self._embed_and_summarize(chunks)
 
             await self._store_chunks(transcription_id, processed)
             await self._set_status(transcription_id, "ready")
+            logger.info(
+                "RAG indexing ready for %s (chunks=%s)",
+                transcription_id,
+                len(processed),
+            )
             return processed
 
         except Exception:
             logger.exception("RAG pipeline failed for %s", transcription_id)
             await self._set_status(transcription_id, "failed")
             raise
+
+    async def search(
+        self,
+        transcription_id: str,
+        query: str,
+        *,
+        top_k: int = 6,
+    ) -> list[RetrievedChunk]:
+        if not query.strip() or top_k <= 0:
+            return []
+
+        query_vector = (await self._embedder.embed([query]))[0]
+        row_set = await self._db.fetch(
+            """SELECT idx, start_s, end_s, text,
+                      (1 - (embedding <=> $2::vector)) AS score
+               FROM transcript_chunks
+               WHERE transcription_id = $1::uuid
+                 AND embedding IS NOT NULL
+               ORDER BY embedding <=> $2::vector
+               LIMIT $3""",
+            transcription_id,
+            str(query_vector),
+            top_k,
+        )
+
+        logger.info(
+            "RAG search for %s returned %s chunks (top_k=%s)",
+            transcription_id,
+            len(row_set),
+            top_k,
+        )
+
+        return [
+            RetrievedChunk(
+                idx=row["idx"],
+                start_s=row["start_s"],
+                end_s=row["end_s"],
+                text=row["text"],
+                score=float(row["score"]) if row["score"] is not None else 0.0,
+            )
+            for row in row_set
+        ]
 
     # -- internal helpers ---------------------------------------------------
 
@@ -204,16 +267,17 @@ class RAGPipeline:
     async def _embed_and_summarize(
         self, chunks: list[Chunk]
     ) -> list[ProcessedChunk]:
-        # Batch-embed all chunk texts at once
+        # Batch-embed chunk texts in provider-safe batches
         texts = [c.text for c in chunks]
-        embeddings = await self._embedder.embed(texts)
+        embeddings = await self._embed_texts(texts)
 
         processed: list[ProcessedChunk] = []
         for chunk, emb in zip(chunks, embeddings):
-            summary, role, keywords = await self._summarizer.summarize(chunk)
-
-            # Embed the summary too (for summary-level search)
-            summary_emb = (await self._embedder.embed([summary]))[0] if summary else None
+            summary: str | None = None
+            role: str | None = None
+            keywords: list[str] = []
+            if self._summarizer:
+                summary, role, keywords = await self._summarizer.summarize(chunk)
 
             processed.append(
                 ProcessedChunk(
@@ -225,10 +289,17 @@ class RAGPipeline:
                     role=role,
                     keywords=keywords,
                     embedding=emb,
-                    summary_embedding=summary_emb,
+                    summary_embedding=None,
                 )
             )
         return processed
+
+    async def _embed_texts(self, texts: list[str]) -> list[list[float]]:
+        vectors: list[list[float]] = []
+        for i in range(0, len(texts), self._embed_batch_size):
+            batch = texts[i : i + self._embed_batch_size]
+            vectors.extend(await self._embedder.embed(batch))
+        return vectors
 
     async def _store_chunks(
         self, transcription_id: str, chunks: list[ProcessedChunk]
