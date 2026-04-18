@@ -624,6 +624,117 @@
   cursor: not-allowed;
 }
 
+/* Theater mode */
+.watch-theater-btn {
+  position: absolute;
+  bottom: 12px;
+  right: 12px;
+  z-index: 10;
+  width: 32px;
+  height: 32px;
+  background: rgba(0, 0, 0, 0.55);
+  color: white;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+  font-size: 15px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.2s, background 0.15s;
+}
+
+.watch-embed-wrapper:hover .watch-theater-btn {
+  opacity: 1;
+}
+
+.watch-layout.theater .watch-theater-btn {
+  opacity: 1;
+  bottom: 16px;
+  right: 16px;
+}
+
+.watch-theater-btn:hover {
+  background: rgba(0, 0, 0, 0.8);
+}
+
+.watch-layout.theater {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: #000;
+  grid-template-columns: 1fr 380px;
+  grid-template-rows: 1fr;
+  min-height: unset;
+  transition: grid-template-columns 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.watch-layout.theater .watch-url-bar,
+.watch-layout.theater .watch-url-error,
+.watch-layout.theater .watch-upload-status,
+.watch-layout.theater .watch-details,
+.watch-layout.theater .watch-resizer {
+  display: none;
+}
+
+.watch-layout.theater .watch-chat-reopen {
+  position: fixed;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 1001;
+  grid-column: unset;
+  grid-row: unset;
+  margin: 0;
+  background: rgba(0,0,0,0.6);
+  border-color: rgba(255,255,255,0.2);
+  color: rgba(255,255,255,0.7);
+}
+
+.watch-layout.theater .watch-left {
+  grid-column: 1;
+  grid-row: 1;
+  padding: 0;
+  justify-content: center;
+  overflow: hidden;
+  height: 100%;
+}
+
+.watch-layout.theater .watch-embed-wrapper {
+  aspect-ratio: auto;
+  flex: 1;
+  width: 100%;
+  max-width: 100% !important;
+  height: 100%;
+  margin: 0;
+  border-radius: 0;
+}
+
+.watch-layout.theater .watch-right {
+  grid-column: 2;
+  grid-row: 1;
+  width: 380px !important;
+  max-width: 380px;
+  height: 100%;
+  position: relative;
+  top: auto;
+  background: rgba(13, 17, 23, 0.96);
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
+  transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.watch-layout.theater-chat-hidden {
+  grid-template-columns: 1fr 0;
+}
+
+.watch-layout.theater-chat-hidden .watch-right {
+  width: 0 !important;
+  max-width: 0;
+  border-left: none;
+  overflow: hidden;
+}
+
 @media (max-width: 900px) {
   .watch-layout {
     display: flex;

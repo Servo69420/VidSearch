@@ -231,6 +231,7 @@ export default function WatchPage({ params }) {
   const [wordIdx, setWordIdx] = useState(0)
   const [wordFade, setWordFade] = useState(true)
   const [chatCollapsed, setChatCollapsed] = useState(false)
+  const [theaterMode, setTheaterMode] = useState(false)
 
   const messagesEndRef = useRef(null)
   const messagesContainerRef = useRef(null)
@@ -435,6 +436,13 @@ export default function WatchPage({ params }) {
     const container = messagesContainerRef.current
     if (container) container.scrollTop = container.scrollHeight
   }, [messages, isLoading])
+
+  useEffect(() => {
+    if (!theaterMode) return
+    function onKeyDown(e) { if (e.key === 'Escape') setTheaterMode(false) }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [theaterMode])
 
   // Initialize YouTube IFrame Player API
   useEffect(() => {
@@ -658,7 +666,7 @@ export default function WatchPage({ params }) {
   }
 
   return (
-    <div className="watch-layout">
+    <div className={`watch-layout${theaterMode ? ' theater' : ''}${theaterMode && chatCollapsed ? ' theater-chat-hidden' : ''}`}>
       {/* Left panel - video */}
       <div className="watch-left">
         <div className="watch-url-bar">
@@ -722,6 +730,13 @@ export default function WatchPage({ params }) {
               className="watch-embed"
             />
           )}
+          <button
+            className="watch-theater-btn"
+            onClick={() => setTheaterMode(v => !v)}
+            title={theaterMode ? 'Exit theater mode (Esc)' : 'Theater mode'}
+          >
+            {theaterMode ? '✕' : '⛶'}
+          </button>
         </div>
 
       </div>
