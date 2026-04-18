@@ -12,3 +12,4 @@ httpx
 openai-whisper
 ffmpeg-python
 youtube-transcript-api
+yt-dlp

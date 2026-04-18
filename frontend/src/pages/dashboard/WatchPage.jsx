@@ -62,7 +62,7 @@ async function loadHistoryFromAPI(videoId) {
   return rows.map(r => ({ role: r.role, text: r.content }))
 }
 
-async function sendMessageToAPI(videoId, messages) {
+async function sendMessageToAPI(videoId, messages, frameBase64) {
   const res = await fetch(`${API_BASE}/chat/ask`, {
     method: 'POST',
     headers: {
@@ -74,6 +74,7 @@ async function sendMessageToAPI(videoId, messages) {
       message: messages
         .filter(m => m.role === 'user')
         .map(m => ({ role: m.role, content: m.text })),
+      ...(frameBase64 ? { frame_base64: frameBase64 } : {}),
     }),
   })
   if (!res.ok) {
@@ -233,6 +234,7 @@ export default function WatchPage({ params }) {
   const [chatCollapsed, setChatCollapsed] = useState(false)
   const [theaterMode, setTheaterMode] = useState(false)
   const [theaterExiting, setTheaterExiting] = useState(false)
+  const [frameCaptureArmed, setFrameCaptureArmed] = useState(false)
 
   const messagesEndRef = useRef(null)
   const messagesContainerRef = useRef(null)
@@ -595,6 +597,9 @@ export default function WatchPage({ params }) {
     const text = chatInput.trim()
     if (!text || chatDisabled) return
 
+    const shouldCapture = frameCaptureArmed && videoId && !localVideoUrl
+    setFrameCaptureArmed(false)
+
     const userMessage = { role: 'user', text }
     const updatedMessages = [...messages, userMessage]
     setMessages(updatedMessages)
@@ -602,8 +607,10 @@ export default function WatchPage({ params }) {
     setIsLoading(true)
     recordChat(uploadedVideoId || videoId)
 
+    const frameBase64 = shouldCapture ? await captureCurrentFrame() : null
+
     try {
-      const { text, toolCalls } = await sendMessageToAPI(uploadedVideoId || videoId, updatedMessages)
+      const { text, toolCalls } = await sendMessageToAPI(uploadedVideoId || videoId, updatedMessages, frameBase64)
 
       // Execute any tool calls (play/pause)
       if (toolCalls.length > 0) {
@@ -672,6 +679,26 @@ export default function WatchPage({ params }) {
 
   function handleUploadClick() {
     fileInputRef.current?.click()
+  }
+
+  async function captureCurrentFrame() {
+    if (!ytReadyRef.current || !videoId) return null
+    const timestamp = ytPlayerRef.current.getCurrentTime()
+    try {
+      const res = await fetch(`${API_BASE}/capture-frame`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${localStorage.getItem('auth_token')}`,
+        },
+        body: JSON.stringify({ video_id: videoId, timestamp }),
+      })
+      if (!res.ok) return null
+      const data = await res.json()
+      return data.image_base64
+    } catch {
+      return null
+    }
   }
 
   function handleSegmentClick(seg, idx) {
@@ -872,6 +899,16 @@ export default function WatchPage({ params }) {
         <div className="watch-chat-input-area">
           <div className="watch-chat-notice">{transcriptionNotice}</div>
           <div className="watch-chat-input-row">
+            {videoId && !localVideoUrl && (
+              <button
+                className={`watch-capture-toggle${frameCaptureArmed ? ' armed' : ''}`}
+                onClick={() => setFrameCaptureArmed(v => !v)}
+                title={frameCaptureArmed ? 'Frame capture armed — will capture on send' : 'Capture current frame with your next message'}
+                disabled={!isTranscriptionReady}
+              >
+                📷
+              </button>
+            )}
             <textarea
               ref={inputRef}
               className="watch-chat-input"
@@ -882,7 +919,11 @@ export default function WatchPage({ params }) {
                 e.target.style.height = e.target.scrollHeight + 'px'
               }}
               onKeyDown={handleChatKeyDown}
-              placeholder={isTranscriptionReady ? 'Ask about this video...' : 'Waiting for transcription...'}
+              placeholder={
+                frameCaptureArmed
+                  ? 'Ask about the current frame...'
+                  : isTranscriptionReady ? 'Ask about this video...' : 'Waiting for transcription...'
+              }
               rows={1}
               disabled={!isTranscriptionReady}
             />
@@ -890,7 +931,8 @@ export default function WatchPage({ params }) {
               className="watch-chat-send"
               onClick={handleSendMessage}
               disabled={!chatInput.trim() || chatDisabled}
-            >&#8593;</button>          </div>
+            >&#8593;</button>
+          </div>
         </div>
         </div>
       </div>

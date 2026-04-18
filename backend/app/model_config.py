@@ -27,6 +27,7 @@ def _env_int(name: str, default: int) -> int:
 @dataclass(frozen=True)
 class ModelConfig:
     chat_model: str
+    vision_model: str
     embedding_model: str
     phase2_summary_model: str
     phase3_summary_model: str
@@ -50,6 +51,7 @@ _phase3_section_max = max(
 
 MODEL_CONFIG = ModelConfig(
     chat_model=os.getenv("OPENROUTER_CHAT_MODEL", "google/gemma-4-31b-it:exacto"),
+    vision_model=os.getenv("OPENROUTER_VISION_MODEL", "google/gemini-2.0-flash-001"),
     embedding_model=os.getenv(
         "OPENROUTER_EMBEDDING_MODEL",
         "perplexity/pplx-embed-v1-0.6b",

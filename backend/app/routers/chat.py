@@ -14,6 +14,7 @@ from app.model_config import MODEL_CONFIG
 
 
 CHAT_MODEL = MODEL_CONFIG.chat_model
+VISION_MODEL = MODEL_CONFIG.vision_model
 EMBEDDING_MODEL = MODEL_CONFIG.embedding_model
 PHASE2_SUMMARY_MODEL = MODEL_CONFIG.phase2_summary_model
 RETRIEVAL_TOP_K = MODEL_CONFIG.rag_retrieval_top_k
@@ -38,6 +39,7 @@ logger = logging.getLogger(__name__)
 class Chatrequest(BaseModel):
     video_id: str
     message: list[dict]
+    frame_base64: str | None = None
 
 
 def is_uuid(val: str) -> bool:
@@ -80,9 +82,10 @@ async def _call_openrouter(
     messages: list[dict],
     *,
     tool_choice: str = "auto",
+    model: str | None = None,
 ) -> dict:
     body: dict = {
-        "model": CHAT_MODEL,
+        "model": model or CHAT_MODEL,
         "messages": messages,
     }
     if tool_choice != "none":
@@ -135,8 +138,10 @@ def _build_tool_result_turns(tool_calls: list[dict], round1_content: str) -> lis
 
 async def _run_chat_loop(
     openai_messages: list[dict],
+    *,
+    model: str | None = None,
 ) -> tuple[str, list[dict]]:
-    data_1 = await _call_openrouter(openai_messages)
+    data_1 = await _call_openrouter(openai_messages, model=model)
     msg_1 = data_1["choices"][0]["message"]
     round1_content = msg_1.get("content") or ""
     round1_tool_calls = msg_1.get("tool_calls") or []
@@ -154,7 +159,7 @@ async def _run_chat_loop(
         )
         try:
             data_2 = await _call_openrouter(
-                followup_messages, tool_choice="none"
+                followup_messages, tool_choice="none", model=model
             )
             msg_2 = data_2["choices"][0]["message"]
             round2_content = msg_2.get("content") or ""
@@ -264,14 +269,35 @@ async def ask(
             }
         )
 
-    for msg in request.message:
-        role = msg.get("role")
-        content = msg.get("content")
-        if role in {"user", "assistant"} and isinstance(content, str):
-            openai_messages.append({"role": role, "content": content})
+    valid_msgs = [
+        msg for msg in request.message
+        if msg.get("role") in {"user", "assistant"} and isinstance(msg.get("content"), str)
+    ]
+
+    for i, msg in enumerate(valid_msgs):
+        is_last_user = msg["role"] == "user" and i == len(valid_msgs) - 1
+        if is_last_user and request.frame_base64:
+            openai_messages.append({
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": msg["content"]},
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:image/jpeg;base64,{request.frame_base64}"
+                        },
+                    },
+                ],
+            })
+        else:
+            openai_messages.append({"role": msg["role"], "content": msg["content"]})
+
+    active_model = VISION_MODEL if request.frame_base64 else None
 
     try:
-        final_content, final_tool_calls = await _run_chat_loop(openai_messages)
+        final_content, final_tool_calls = await _run_chat_loop(
+            openai_messages, model=active_model
+        )
     except httpx.TimeoutException:
         logger.error("OpenRouter chat request timed out")
         raise HTTPException(

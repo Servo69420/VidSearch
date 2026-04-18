@@ -624,6 +624,37 @@
   cursor: not-allowed;
 }
 
+/* Frame capture toggle button */
+.watch-capture-toggle {
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 15px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: border-color var(--ease), background var(--ease), box-shadow var(--ease);
+}
+
+.watch-capture-toggle:hover {
+  border-color: var(--navy);
+}
+
+.watch-capture-toggle.armed {
+  background: var(--navy);
+  border-color: var(--navy);
+  box-shadow: 0 0 0 3px rgba(30, 58, 138, 0.18);
+}
+
+.watch-capture-toggle:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 /* Theater mode */
 @keyframes theaterEnter {
   from {

@@ -16,6 +16,7 @@ from app.routers import auth
 from app.routers import transcription
 from app.models.background_tasks import TokenCleanupTask
 from app.routers import chat_history
+from app.routers import frame_capture
 
 
 UPLOAD_DIR = Path(__file__).resolve().parent / "uploads"
@@ -61,3 +62,4 @@ async def health():
 app.include_router(
     transcription.router, prefix="/transcription", tags=["transcription"]
 )
+app.include_router(frame_capture.router, tags=["frame-capture"])
