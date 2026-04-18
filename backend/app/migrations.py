@@ -1,6 +1,6 @@
 import logging
 
-from app.openrouter_embedder import DEFAULT_EMBEDDING_DIMENSIONS
+from app.embedder import DEFAULT_EMBEDDING_DIMENSIONS
 
 logger = logging.getLogger(__name__)
 

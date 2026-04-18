@@ -9,6 +9,7 @@ from app.database import get_db
 from app.routers.context import get_transcript, search_video_context
 from app.routers.video_player_tools import VIDEO_PLAYER_TOOLS
 from app.youtube import normalize_youtube_ref, resolve_or_create_yt_video
+from app.model_config import MODEL_CONFIG
 
 
 # Model switches are centralized in app/model_config.py.
