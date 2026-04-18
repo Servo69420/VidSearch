@@ -204,6 +204,8 @@ export default function WatchPage({ params }) {
   const [videoLoadError, setVideoLoadError] = useState(false)
   const [ytVideoError, setYtVideoError] = useState(false)
   const [transcriptionStatus, setTranscriptionStatus] = useState('checking')
+  const [segments, setSegments] = useState([])
+  const [activeSegIdx, setActiveSegIdx] = useState(null)
 
   const messagesEndRef = useRef(null)
   const messagesContainerRef = useRef(null)
@@ -278,6 +280,8 @@ export default function WatchPage({ params }) {
 
   useEffect(() => {
     setTranscriptionStatus(activeVideoId ? 'checking' : 'missing')
+    setSegments([])
+    setActiveSegIdx(null)
   }, [activeVideoId])
 
   useEffect(() => {
@@ -339,6 +343,20 @@ export default function WatchPage({ params }) {
       if (timeoutId) window.clearTimeout(timeoutId)
     }
   }, [activeVideoId])
+
+  useEffect(() => {
+    if (transcriptionStatus !== 'ready' || !activeVideoId) return
+    const token = localStorage.getItem('auth_token')
+    if (!token) return
+    fetch(`${API_BASE}/transcription/segments/${encodeURIComponent(activeVideoId)}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (data?.segments?.length) setSegments(data.segments)
+      })
+      .catch(() => {})
+  }, [transcriptionStatus, activeVideoId])
 
   useEffect(() => {
     const container = messagesContainerRef.current
@@ -556,6 +574,16 @@ export default function WatchPage({ params }) {
     fileInputRef.current?.click()
   }
 
+  function handleSegmentClick(seg, idx) {
+    setActiveSegIdx(idx)
+    if (localVideoUrl) {
+      const el = getLocalVideoEl()
+      if (el) el.currentTime = seg.seconds
+    } else if (ytReadyRef.current) {
+      ytPlayerRef.current?.seekTo(seg.seconds, true)
+    }
+  }
+
   return (
     <div className="watch-layout">
       {/* Left panel - video */}
@@ -627,14 +655,22 @@ export default function WatchPage({ params }) {
 
       <div className="watch-details">
         <div className="watch-title">{videoTitle}</div>
-        <div className="watch-segments">
-          <div className="watch-seg-label">Segments</div>
-          <div className="watch-seg-list">
-            {['0:00 Introduction', '1:42 Neurons & layers', '4:10 Weights & biases', '7:30 Activation functions', '11:05 Training overview'].map((s, i) => (
-              <button key={i} className={`watch-seg-chip ${i === 1 ? 'active' : ''}`}>{s}</button>
-            ))}
+        {segments.length > 0 && (
+          <div className="watch-segments">
+            <div className="watch-seg-label">Segments</div>
+            <div className="watch-seg-list">
+              {segments.map((seg, i) => (
+                <button
+                  key={i}
+                  className={`watch-seg-chip ${i === activeSegIdx ? 'active' : ''}`}
+                  onClick={() => handleSegmentClick(seg, i)}
+                >
+                  {seg.time} {seg.title}
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       <div className="watch-resizer" onMouseDown={handleResizerMouseDown} />
