@@ -625,6 +625,28 @@
 }
 
 /* Theater mode */
+@keyframes theaterEnter {
+  from {
+    clip-path: inset(3% 3% round 14px);
+    opacity: 0.6;
+  }
+  to {
+    clip-path: inset(0% 0% round 0px);
+    opacity: 1;
+  }
+}
+
+@keyframes theaterExit {
+  from {
+    clip-path: inset(0% 0% round 0px);
+    opacity: 1;
+  }
+  to {
+    clip-path: inset(3% 3% round 14px);
+    opacity: 0;
+  }
+}
+
 .watch-theater-btn {
   position: absolute;
   bottom: 12px;
@@ -668,6 +690,14 @@
   grid-template-rows: 1fr;
   min-height: unset;
   transition: grid-template-columns 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  animation: theaterEnter 0.32s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.watch-layout.theater-exit {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  animation: theaterExit 0.28s cubic-bezier(0.4, 0, 1, 1) forwards;
 }
 
 .watch-layout.theater .watch-url-bar,
