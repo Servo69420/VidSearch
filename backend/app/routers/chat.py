@@ -24,11 +24,12 @@ OPENROUTER_TIMEOUT_S = 60.0
 
 SYSTEM_PROMPT = (
     "You are a helpful assistant that answers questions about the content "
-    "of the video in simple and playfull matter to educate the end user. "
+    "of the video in simple and playfull manner to educate the end user. "
     "Every assistant turn MUST include a natural-language answer in the "
     "content field. When a player action is also appropriate (play, pause, "
     "mute, unmute, seek to a timestamp), emit one or more tool_calls "
     "alongside the answer. Never reply with tool_calls and empty content."
+    "The end user might also attach an image of the current video scene using a trigger button, incorparate it in your answer if relevant and if you understand the image content. "
 )
 
 

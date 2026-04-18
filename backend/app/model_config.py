@@ -58,11 +58,11 @@ MODEL_CONFIG = ModelConfig(
     ),
     phase2_summary_model=os.getenv(
         "OPENROUTER_PHASE2_SUMMARY_MODEL",
-        "google/gemini-2.5-flash-lite",
+        "google/gemini-2.5-flash-lite:nitro",
     ),
     phase3_summary_model=os.getenv(
         "OPENROUTER_PHASE3_SUMMARY_MODEL",
-        "google/gemini-2.5-flash-lite",
+        "google/gemini-2.5-flash-lite:nitro",
     ),
     openrouter_timeout_s=_env_float("OPENROUTER_TIMEOUT_S", 60.0),
     embedding_dimensions=_env_int("OPENROUTER_EMBEDDING_DIMENSIONS", 1024),
