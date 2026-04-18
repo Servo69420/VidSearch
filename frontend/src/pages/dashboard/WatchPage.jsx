@@ -206,6 +206,7 @@ export default function WatchPage({ params }) {
   const [transcriptionStatus, setTranscriptionStatus] = useState('checking')
   const [segments, setSegments] = useState([])
   const [activeSegIdx, setActiveSegIdx] = useState(null)
+  const [segmentsVisible, setSegmentsVisible] = useState(true)
 
   const messagesEndRef = useRef(null)
   const messagesContainerRef = useRef(null)
@@ -615,7 +616,7 @@ export default function WatchPage({ params }) {
         {uploadError && <div className="watch-url-error">{uploadError}</div>}
         {isUploading && <div className="watch-upload-status">Uploading video...</div>}
 
-        <div className="watch-embed-wrapper">
+        <div className={`watch-embed-wrapper${segments.length > 0 && segmentsVisible ? ' compact' : ''}`}>
           {localVideoUrl ? (
             videoLoadError ? (
               <div className="watch-no-video">
@@ -657,18 +658,29 @@ export default function WatchPage({ params }) {
         <div className="watch-title">{videoTitle}</div>
         {segments.length > 0 && (
           <div className="watch-segments">
-            <div className="watch-seg-label">Segments</div>
-            <div className="watch-seg-list">
-              {segments.map((seg, i) => (
-                <button
-                  key={i}
-                  className={`watch-seg-chip ${i === activeSegIdx ? 'active' : ''}`}
-                  onClick={() => handleSegmentClick(seg, i)}
-                >
-                  {seg.time} {seg.title}
-                </button>
-              ))}
+            <div className="watch-seg-label">
+              Segments
+              <button
+                className="watch-seg-toggle"
+                onClick={() => setSegmentsVisible(v => !v)}
+                title={segmentsVisible ? 'Hide segments' : 'Show segments'}
+              >
+                {segmentsVisible ? '▲' : '▼'}
+              </button>
             </div>
+            {segmentsVisible && (
+              <div className="watch-seg-list">
+                {segments.map((seg, i) => (
+                  <button
+                    key={i}
+                    className={`watch-seg-chip ${i === activeSegIdx ? 'active' : ''}`}
+                    onClick={() => handleSegmentClick(seg, i)}
+                  >
+                    {seg.time} {seg.title}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>
