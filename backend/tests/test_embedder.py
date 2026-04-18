@@ -2,7 +2,7 @@ import unittest
 from unittest.mock import patch
 
 from app.config import settings
-from app.openrouter_embedder import OpenRouterEmbedder
+from app.embedder import OpenRouterEmbedder
 
 
 class _FakeResponse:
@@ -45,7 +45,7 @@ class TestOpenRouterEmbedder(unittest.IsolatedAsyncioTestCase):
         with (
             patch.object(settings, "OPENROUTER_API_KEY", "test-key"),
             patch(
-                "app.openrouter_embedder.httpx.AsyncClient",
+                "app.embedder.httpx.AsyncClient",
                 return_value=_FakeClient(response),
             ),
         ):
@@ -61,7 +61,7 @@ class TestOpenRouterEmbedder(unittest.IsolatedAsyncioTestCase):
         with (
             patch.object(settings, "OPENROUTER_API_KEY", "test-key"),
             patch(
-                "app.openrouter_embedder.httpx.AsyncClient",
+                "app.embedder.httpx.AsyncClient",
                 return_value=_FakeClient(response),
             ),
         ):
@@ -75,7 +75,7 @@ class TestOpenRouterEmbedder(unittest.IsolatedAsyncioTestCase):
         with (
             patch.object(settings, "OPENROUTER_API_KEY", "test-key"),
             patch(
-                "app.openrouter_embedder.httpx.AsyncClient",
+                "app.embedder.httpx.AsyncClient",
                 return_value=_FakeClient(response),
             ),
         ):

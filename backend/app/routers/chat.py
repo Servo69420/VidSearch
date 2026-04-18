@@ -11,11 +11,12 @@ from app.routers.video_player_tools import VIDEO_PLAYER_TOOLS
 from app.youtube import normalize_youtube_ref, resolve_or_create_yt_video
 
 
-# Model switches for phase 1.
-# Change these two values to swap chat and embedding models.
-CHAT_MODEL = "google/gemini-2.5-flash-lite"
-EMBEDDING_MODEL = "perplexity/pplx-embed-v1-0.6b"
-RETRIEVAL_TOP_K = 6
+# Model switches are centralized in app/model_config.py.
+# Change chat, embedding, and phase-2 summary models there.
+CHAT_MODEL = MODEL_CONFIG.chat_model
+EMBEDDING_MODEL = MODEL_CONFIG.embedding_model
+PHASE2_SUMMARY_MODEL = MODEL_CONFIG.phase2_summary_model
+RETRIEVAL_TOP_K = MODEL_CONFIG.rag_retrieval_top_k
 
 
 router = APIRouter()
@@ -50,7 +51,12 @@ def _grounding_message(chunks: list[dict]) -> str:
         "Use this context first when answering video-content questions.",
         "If you call seek_video, only use timestamps present below.",
     ]
+    last_topic: str | None = None
     for chunk in chunks:
+        topic_summary = chunk.get("topic_summary")
+        if topic_summary and topic_summary != last_topic:
+            lines.append(f"Topic: {topic_summary}")
+            last_topic = topic_summary
         lines.append(
             f"[{_format_seconds(chunk['start_s'])} - "
             f"{_format_seconds(chunk['end_s'])}] {chunk['text']}"
@@ -126,9 +132,10 @@ async def ask(
                 top_k=RETRIEVAL_TOP_K,
             )
             logger.info(
-                "Chat grounding retrieved %s chunks (video_id=%s)",
+                "Chat grounding retrieved %s chunks (video_id=%s, summary_model=%s)",
                 len(retrieved_chunks),
                 request.video_id,
+                PHASE2_SUMMARY_MODEL,
             )
         except Exception:
             logger.exception(

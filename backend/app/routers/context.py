@@ -1,7 +1,7 @@
 import uuid as _uuid
 from typing import Any
 
-from app.openrouter_embedder import OpenRouterEmbedder
+from app.embedder import OpenRouterEmbedder
 from app.rag import RAGPipeline
 from app.youtube import YOUTUBE_ID_SQL_EXPR, normalize_youtube_ref
 
@@ -83,10 +83,12 @@ async def search_video_context(
     return [
         {
             "idx": h.idx,
+            "level": h.level,
             "start_s": h.start_s,
             "end_s": h.end_s,
             "text": h.text,
             "score": h.score,
+            "topic_summary": h.topic_summary,
         }
         for h in hits
     ]

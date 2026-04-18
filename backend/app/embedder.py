@@ -5,10 +5,11 @@ from typing import Any
 import httpx
 
 from app.config import settings
+from app.model_config import MODEL_CONFIG
 
 OPENROUTER_EMBEDDING_ENDPOINT = "https://openrouter.ai/api/v1/embeddings"
-DEFAULT_EMBEDDING_MODEL = "perplexity/pplx-embed-v1-0.6b"
-DEFAULT_EMBEDDING_DIMENSIONS = 1024
+DEFAULT_EMBEDDING_MODEL = MODEL_CONFIG.embedding_model
+DEFAULT_EMBEDDING_DIMENSIONS = MODEL_CONFIG.embedding_dimensions
 
 
 class OpenRouterEmbedder:
@@ -17,7 +18,7 @@ class OpenRouterEmbedder:
         *,
         model: str = DEFAULT_EMBEDDING_MODEL,
         expected_dimensions: int = DEFAULT_EMBEDDING_DIMENSIONS,
-        timeout_s: float = 60.0,
+        timeout_s: float = MODEL_CONFIG.openrouter_timeout_s,
     ) -> None:
         self._model = model
         self._expected_dimensions = expected_dimensions
