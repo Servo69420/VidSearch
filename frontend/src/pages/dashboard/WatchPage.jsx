@@ -232,6 +232,7 @@ export default function WatchPage({ params }) {
   const [wordFade, setWordFade] = useState(true)
   const [chatCollapsed, setChatCollapsed] = useState(false)
   const [theaterMode, setTheaterMode] = useState(false)
+  const [theaterExiting, setTheaterExiting] = useState(false)
 
   const messagesEndRef = useRef(null)
   const messagesContainerRef = useRef(null)
@@ -437,9 +438,17 @@ export default function WatchPage({ params }) {
     if (container) container.scrollTop = container.scrollHeight
   }, [messages, isLoading])
 
+  function exitTheater() {
+    setTheaterExiting(true)
+    setTimeout(() => {
+      setTheaterMode(false)
+      setTheaterExiting(false)
+    }, 280)
+  }
+
   useEffect(() => {
     if (!theaterMode) return
-    function onKeyDown(e) { if (e.key === 'Escape') setTheaterMode(false) }
+    function onKeyDown(e) { if (e.key === 'Escape') exitTheater() }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [theaterMode])
@@ -491,6 +500,16 @@ export default function WatchPage({ params }) {
 
   function getLocalVideoEl() {
     return document.querySelector('video.watch-embed')
+  }
+
+  function seekTo(seconds) {
+    if (localVideoUrl) {
+      const el = getLocalVideoEl()
+      if (el) { el.currentTime = seconds; el.play() }
+    } else if (ytReadyRef.current) {
+      ytPlayerRef.current?.seekTo(seconds, true)
+      ytPlayerRef.current?.playVideo()
+    }
   }
 
   function executeToolCalls(toolCalls) {
@@ -666,7 +685,7 @@ export default function WatchPage({ params }) {
   }
 
   return (
-    <div className={`watch-layout${theaterMode ? ' theater' : ''}${theaterMode && chatCollapsed ? ' theater-chat-hidden' : ''}`}>
+    <div className={`watch-layout${theaterMode ? ' theater' : ''}${theaterExiting ? ' theater-exit' : ''}${theaterMode && chatCollapsed ? ' theater-chat-hidden' : ''}`}>
       {/* Left panel - video */}
       <div className="watch-left">
         <div className="watch-url-bar">
@@ -732,7 +751,7 @@ export default function WatchPage({ params }) {
           )}
           <button
             className="watch-theater-btn"
-            onClick={() => setTheaterMode(v => !v)}
+            onClick={() => theaterMode ? exitTheater() : setTheaterMode(true)}
             title={theaterMode ? 'Exit theater mode (Esc)' : 'Theater mode'}
           >
             {theaterMode ? '✕' : '⛶'}
@@ -816,7 +835,7 @@ export default function WatchPage({ params }) {
               {msg.role === 'assistant' && <div className="watch-bubble-avatar">AI</div>}
               <div className={`watch-bubble ${msg.role}`}>
                 {msg.role === 'assistant'
-                  ? <MarkdownMessage content={msg.text} />
+                  ? <MarkdownMessage content={msg.text} onTimestampClick={seekTo} />
                   : msg.text.split('\n\n').map((para, j) => <p key={j}>{para}</p>)
                 }
               </div>
