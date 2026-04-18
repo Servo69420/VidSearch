@@ -26,11 +26,17 @@ const WELCOME_MESSAGE = {
 
 const chatKey = (userId, vid) => `watchChat_${userId || 'anonymous'}_${vid}`
 const legacyChatKey = (vid) => `watchChat_${vid}`
+const API_BASE = 'http://localhost:8000'
+const TRANSCRIPTION_POLL_MS = 2500
+
+function youtubeWatchUrl(videoId) {
+  return `https://www.youtube.com/watch?v=${videoId}`
+}
 
 async function loadHistoryFromAPI(videoId) {
   const token = localStorage.getItem('auth_token')
   if (!token || !videoId) return null
-  const res = await fetch(`http://localhost:8000/chat-history/${videoId}`, {
+  const res = await fetch(`${API_BASE}/chat-history/${videoId}`, {
     headers: { Authorization: `Bearer ${token}` },
   })
   if (!res.ok) return null
@@ -39,7 +45,7 @@ async function loadHistoryFromAPI(videoId) {
 }
 
 async function sendMessageToAPI(videoId, messages) {
-  const res = await fetch('http://localhost:8000/chat/ask', {
+  const res = await fetch(`${API_BASE}/chat/ask`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -196,11 +202,27 @@ export default function WatchPage({ params }) {
   const [isUploading, setIsUploading] = useState(false)
   const [uploadError, setUploadError] = useState('')
   const [videoLoadError, setVideoLoadError] = useState(false)
+  const [ytVideoError, setYtVideoError] = useState(false)
+  const [transcriptionStatus, setTranscriptionStatus] = useState('checking')
 
   const messagesEndRef = useRef(null)
   const messagesContainerRef = useRef(null)
   const inputRef = useRef(null)
   const fileInputRef = useRef(null)
+  const transcriptionStartedRef = useRef(new Set())
+
+  const activeVideoId = uploadedVideoId || videoId
+  const isTranscriptionReady = transcriptionStatus === 'ready'
+  const isTranscriptionFailed = transcriptionStatus === 'failed'
+  const chatDisabled = isLoading || !isTranscriptionReady
+  const transcriptionNotice = (() => {
+    if (isTranscriptionReady) return 'Chat powered by AI - responses are contextual to the video.'
+    if (isTranscriptionFailed) return 'Transcription failed. Load the video again or try another video.'
+    if (transcriptionStatus === 'missing') return 'Preparing transcription before chat becomes available.'
+    if (transcriptionStatus === 'chunking') return 'Indexing transcript for contextual answers.'
+    if (transcriptionStatus === 'summarizing') return 'Finishing transcript analysis.'
+    return 'Transcribing video before chat becomes available.'
+  })()
 
   useEffect(() => {
     if (params?.id) recordVisit(params.id)
@@ -255,6 +277,70 @@ export default function WatchPage({ params }) {
   }, [messages, uploadedVideoId, user?.id, videoId])
 
   useEffect(() => {
+    setTranscriptionStatus(activeVideoId ? 'checking' : 'missing')
+  }, [activeVideoId])
+
+  useEffect(() => {
+    if (!videoId || localVideoUrl) return
+    const token = localStorage.getItem('auth_token')
+    if (!token) return
+
+    const startKey = `youtube:${videoId}`
+    if (transcriptionStartedRef.current.has(startKey)) return
+    transcriptionStartedRef.current.add(startKey)
+
+    fetch(`${API_BASE}/transcription/url`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ url: youtubeWatchUrl(videoId) }),
+    }).catch(() => {
+      setTranscriptionStatus('failed')
+    })
+  }, [localVideoUrl, videoId])
+
+  useEffect(() => {
+    if (!activeVideoId) return
+    const token = localStorage.getItem('auth_token')
+    if (!token) {
+      setTranscriptionStatus('failed')
+      return
+    }
+
+    let cancelled = false
+    let timeoutId = null
+
+    async function poll() {
+      try {
+        const res = await fetch(`${API_BASE}/transcription/status/${encodeURIComponent(activeVideoId)}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        if (!res.ok) throw new Error(`Status failed: ${res.status}`)
+        const data = await res.json()
+        if (cancelled) return
+
+        setTranscriptionStatus(data.status || 'missing')
+        if (!data.ready) {
+          timeoutId = window.setTimeout(poll, TRANSCRIPTION_POLL_MS)
+        }
+      } catch {
+        if (!cancelled) {
+          setTranscriptionStatus('checking')
+          timeoutId = window.setTimeout(poll, TRANSCRIPTION_POLL_MS)
+        }
+      }
+    }
+
+    poll()
+    return () => {
+      cancelled = true
+      if (timeoutId) window.clearTimeout(timeoutId)
+    }
+  }, [activeVideoId])
+
+  useEffect(() => {
     const container = messagesContainerRef.current
     if (container) container.scrollTop = container.scrollHeight
   }, [messages, isLoading])
@@ -274,6 +360,7 @@ export default function WatchPage({ params }) {
         ytPlayerRef.current = null
       }
       ytReadyRef.current = false
+      setYtVideoError(false)
       // YT.Player replaces the target element with an <iframe>. Give it a
       // disposable child so React keeps ownership of the ref'd wrapper.
       const mount = document.createElement('div')
@@ -286,6 +373,7 @@ export default function WatchPage({ params }) {
         playerVars: { rel: 0, modestbranding: 1 },
         events: {
           onReady: () => { ytReadyRef.current = true },
+          onError: () => { if (!cancelled) setYtVideoError(true) },
         },
       })
     })
@@ -354,25 +442,28 @@ export default function WatchPage({ params }) {
   function handleLoadVideo() {
     const id = parseYouTubeId(urlInput.trim())
     if (id) {
+      setTranscriptionStatus('checking')
       setVideoId(id)
       setUploadedVideoId(null)
       setLocalVideoUrl(null)
       setVideoTitle('Video loaded')
       setUrlError(false)
       setUploadError('')
+      setYtVideoError(false)
       setMessages([WELCOME_MESSAGE])
       addUserVideo({ id: `yt_${id}`, type: 'youtube', youtubeId: id, title: 'Video loaded', addedAt: new Date().toISOString() })
 
       // Trigger transcription in the background
       const token = localStorage.getItem('auth_token')
-      fetch('http://localhost:8000/transcription/url', {
+      transcriptionStartedRef.current.add(`youtube:${id}`)
+      fetch(`${API_BASE}/transcription/url`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({ url: urlInput.trim() }),
-      }).catch(() => { })
+      }).catch(() => setTranscriptionStatus('failed'))
     } else {
       setUrlError(true)
     }
@@ -384,7 +475,7 @@ export default function WatchPage({ params }) {
 
   async function handleSendMessage() {
     const text = chatInput.trim()
-    if (!text || isLoading) return
+    if (!text || chatDisabled) return
 
     const userMessage = { role: 'user', text }
     const updatedMessages = [...messages, userMessage]
@@ -433,7 +524,7 @@ export default function WatchPage({ params }) {
     formData.append('file', file)
 
     try {
-      const res = await fetch('http://localhost:8000/files/upload_video', {
+      const res = await fetch(`${API_BASE}/files/upload_video`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` },
         body: formData,
@@ -445,7 +536,8 @@ export default function WatchPage({ params }) {
       }
 
       const data = await res.json()
-      const videoUrl = `http://localhost:8000${data.url}`
+      const videoUrl = `${API_BASE}${data.url}`
+      setTranscriptionStatus('checking')
       setLocalVideoUrl(videoUrl)
       setVideoId('')
       setUploadedVideoId(data.user_video_id || null)
@@ -515,6 +607,14 @@ export default function WatchPage({ params }) {
                 onError={() => setVideoLoadError(true)}
               />
             )
+          ) : ytVideoError ? (
+            <div className="watch-no-video">
+              <div className="watch-no-video-icon">&#128249;</div>
+              <p className="watch-no-video-title">Video not available</p>
+              <p className="watch-no-video-sub">
+                This video cannot be played (it may have been deleted, made private, or has embedding disabled).
+              </p>
+            </div>
           ) : (
             <div
               ref={ytContainerRef}
@@ -574,11 +674,20 @@ export default function WatchPage({ params }) {
               </div>
             </div>
           )}
+          {!isTranscriptionReady && !isLoading && (
+            <div className="watch-bubble-row assistant">
+              <div className="watch-bubble-avatar">AI</div>
+              <div className="watch-bubble assistant watch-transcription-loading">
+                <div className="watch-transcription-spinner" />
+                <span>{transcriptionNotice}</span>
+              </div>
+            </div>
+          )}
           <div ref={messagesEndRef} />
         </div>
 
         <div className="watch-chat-input-area">
-          <div className="watch-chat-notice">Chat powered by AI — responses are contextual to the video.</div>
+          <div className="watch-chat-notice">{transcriptionNotice}</div>
           <div className="watch-chat-input-row">
             <textarea
               ref={inputRef}
@@ -590,13 +699,14 @@ export default function WatchPage({ params }) {
                 e.target.style.height = e.target.scrollHeight + 'px'
               }}
               onKeyDown={handleChatKeyDown}
-              placeholder="Ask about this video…"
+              placeholder={isTranscriptionReady ? 'Ask about this video...' : 'Waiting for transcription...'}
               rows={1}
+              disabled={!isTranscriptionReady}
             />
             <button
               className="watch-chat-send"
               onClick={handleSendMessage}
-              disabled={!chatInput.trim() || isLoading}
+              disabled={!chatInput.trim() || chatDisabled}
             >&#8593;</button>          </div>
         </div>
       </div>

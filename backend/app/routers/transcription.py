@@ -6,6 +6,7 @@ import uuid
 
 from app.database import get_db
 from app.dependencies import get_current_user
+from app.routers.context import get_transcript
 from app.routers.chat import EMBEDDING_MODEL
 from app.transcription import transcribe_video_yt, transcribe_uploaded_video
 
@@ -17,6 +18,24 @@ router = APIRouter()
 
 class YouTubeTranscriptionRequest(BaseModel):
     url: str
+
+
+@router.get("/status/{video_id:path}")
+async def transcription_status(
+    video_id: str,
+    current_user=Depends(get_current_user),
+    db=Depends(get_db),
+):
+    transcript = await get_transcript(video_id, db)
+    if not transcript:
+        return {"ready": False, "status": "missing", "transcription_id": None}
+
+    status = transcript.get("status") or "pending"
+    return {
+        "ready": status == "ready",
+        "status": status,
+        "transcription_id": str(transcript["id"]),
+    }
 
 
 @router.post("/url")

@@ -27,7 +27,7 @@ async def get_transcript(video_id: str, db) -> dict[str, Any] | None:
             SELECT *
             FROM transcriptions
             WHERE user_video_id = $1::uuid
-            ORDER BY created_at DESC
+            ORDER BY (status = 'ready') DESC, created_at DESC
             LIMIT 1
             """,
             video_id,
@@ -38,7 +38,7 @@ async def get_transcript(video_id: str, db) -> dict[str, Any] | None:
                 SELECT *
                 FROM transcriptions
                 WHERE video_id = $1::uuid
-                ORDER BY created_at DESC
+                ORDER BY (status = 'ready') DESC, created_at DESC
                 LIMIT 1
                 """,
                 video_id,
@@ -54,7 +54,7 @@ async def get_transcript(video_id: str, db) -> dict[str, Any] | None:
             FROM transcriptions t
             JOIN yt_videos v ON v.id = t.video_id
             WHERE {YOUTUBE_ID_SQL_EXPR} = $1
-            ORDER BY t.created_at DESC
+            ORDER BY (t.status = 'ready') DESC, t.created_at DESC
             LIMIT 1
             """,
             ref.video_id,

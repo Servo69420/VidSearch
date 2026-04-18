@@ -6,7 +6,7 @@ from app.config import settings
 from fastapi import APIRouter, HTTPException, Depends
 from app.dependencies import get_current_user
 from app.database import get_db
-from app.routers.context import search_video_context
+from app.routers.context import get_transcript, search_video_context
 from app.routers.video_player_tools import VIDEO_PLAYER_TOOLS
 from app.youtube import normalize_youtube_ref, resolve_or_create_yt_video
 
@@ -93,6 +93,18 @@ async def ask(
         resolved = await resolve_or_create_yt_video(db, yt_ref.video_id)
         video_id = resolved.yt_video_id
         user_video_id = None
+
+    transcript = await get_transcript(request.video_id, db)
+    if not transcript:
+        raise HTTPException(
+            status_code=409,
+            detail="Transcription is not ready yet.",
+        )
+    if transcript.get("status") != "ready":
+        raise HTTPException(
+            status_code=409,
+            detail=f"Transcription is {transcript.get('status', 'pending')}.",
+        )
 
     user_message = next(
         (
