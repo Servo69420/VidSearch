@@ -19,6 +19,17 @@ function parseYouTubeId(url) {
   return null
 }
 
+const TRANSCRIPTION_WORDS = [
+  'Transcribing audio',
+  'Processing speech',
+  'Analyzing content',
+  'Building transcript',
+  'Extracting segments',
+  'Indexing context',
+  'Generating embeddings',
+  'Finalizing',
+]
+
 const WELCOME_MESSAGE = {
   role: 'assistant',
   text: 'Hi! Paste a YouTube link above and I\'ll help you understand the video. You can ask me anything about its content.',
@@ -31,6 +42,13 @@ const TRANSCRIPTION_POLL_MS = 2500
 
 function youtubeWatchUrl(videoId) {
   return `https://www.youtube.com/watch?v=${videoId}`
+}
+
+function formatElapsed(seconds) {
+  if (seconds < 60) return `${seconds}s`
+  const m = Math.floor(seconds / 60)
+  const s = seconds % 60
+  return s === 0 ? `${m}m` : `${m}m ${s}s`
 }
 
 async function loadHistoryFromAPI(videoId) {
@@ -207,6 +225,13 @@ export default function WatchPage({ params }) {
   const [segments, setSegments] = useState([])
   const [activeSegIdx, setActiveSegIdx] = useState(null)
   const [segmentsVisible, setSegmentsVisible] = useState(true)
+  const [transcriptionElapsed, setTranscriptionElapsed] = useState(0)
+  const transcriptionTimerRef = useRef(null)
+  const transcriptionStartRef = useRef(null)
+  const [wordIdx, setWordIdx] = useState(0)
+  const [wordFade, setWordFade] = useState(true)
+  const [chatCollapsed, setChatCollapsed] = useState(false)
+  const [theaterMode, setTheaterMode] = useState(false)
 
   const messagesEndRef = useRef(null)
   const messagesContainerRef = useRef(null)
@@ -283,7 +308,38 @@ export default function WatchPage({ params }) {
     setTranscriptionStatus(activeVideoId ? 'checking' : 'missing')
     setSegments([])
     setActiveSegIdx(null)
+    setTranscriptionElapsed(0)
+    transcriptionStartRef.current = null
+    if (transcriptionTimerRef.current) clearInterval(transcriptionTimerRef.current)
   }, [activeVideoId])
+
+  useEffect(() => {
+    const done = transcriptionStatus === 'ready' || transcriptionStatus === 'failed'
+    const active = !done && transcriptionStatus !== 'missing'
+
+    if (active) {
+      if (!transcriptionStartRef.current) {
+        transcriptionStartRef.current = Date.now()
+      }
+      if (!transcriptionTimerRef.current) {
+        transcriptionTimerRef.current = setInterval(() => {
+          setTranscriptionElapsed(Math.floor((Date.now() - transcriptionStartRef.current) / 1000))
+        }, 1000)
+      }
+    } else {
+      if (transcriptionTimerRef.current) {
+        clearInterval(transcriptionTimerRef.current)
+        transcriptionTimerRef.current = null
+      }
+    }
+
+    return () => {
+      if (transcriptionTimerRef.current) {
+        clearInterval(transcriptionTimerRef.current)
+        transcriptionTimerRef.current = null
+      }
+    }
+  }, [transcriptionStatus])
 
   useEffect(() => {
     if (!videoId || localVideoUrl) return
@@ -346,6 +402,23 @@ export default function WatchPage({ params }) {
   }, [activeVideoId])
 
   useEffect(() => {
+    if (isTranscriptionReady || isTranscriptionFailed) {
+      setWordIdx(0)
+      setWordFade(true)
+      return
+    }
+    setWordFade(true)
+    const interval = setInterval(() => {
+      setWordFade(false)
+      setTimeout(() => {
+        setWordIdx(i => (i + 1) % TRANSCRIPTION_WORDS.length)
+        setWordFade(true)
+      }, 350)
+    }, 2800)
+    return () => clearInterval(interval)
+  }, [isTranscriptionReady, isTranscriptionFailed])
+
+  useEffect(() => {
     if (transcriptionStatus !== 'ready' || !activeVideoId) return
     const token = localStorage.getItem('auth_token')
     if (!token) return
@@ -363,6 +436,13 @@ export default function WatchPage({ params }) {
     const container = messagesContainerRef.current
     if (container) container.scrollTop = container.scrollHeight
   }, [messages, isLoading])
+
+  useEffect(() => {
+    if (!theaterMode) return
+    function onKeyDown(e) { if (e.key === 'Escape') setTheaterMode(false) }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [theaterMode])
 
   // Initialize YouTube IFrame Player API
   useEffect(() => {
@@ -586,7 +666,7 @@ export default function WatchPage({ params }) {
   }
 
   return (
-    <div className="watch-layout">
+    <div className={`watch-layout${theaterMode ? ' theater' : ''}${theaterMode && chatCollapsed ? ' theater-chat-hidden' : ''}`}>
       {/* Left panel - video */}
       <div className="watch-left">
         <div className="watch-url-bar">
@@ -616,7 +696,7 @@ export default function WatchPage({ params }) {
         {uploadError && <div className="watch-url-error">{uploadError}</div>}
         {isUploading && <div className="watch-upload-status">Uploading video...</div>}
 
-        <div className={`watch-embed-wrapper${segments.length > 0 && segmentsVisible ? ' compact' : ''}`}>
+        <div className={`watch-embed-wrapper${segments.length > 0 && segmentsVisible && !chatCollapsed ? ' compact' : ''}${chatCollapsed ? ' chat-hidden' : ''}`}>
           {localVideoUrl ? (
             videoLoadError ? (
               <div className="watch-no-video">
@@ -650,6 +730,13 @@ export default function WatchPage({ params }) {
               className="watch-embed"
             />
           )}
+          <button
+            className="watch-theater-btn"
+            onClick={() => setTheaterMode(v => !v)}
+            title={theaterMode ? 'Exit theater mode (Esc)' : 'Theater mode'}
+          >
+            {theaterMode ? '✕' : '⛶'}
+          </button>
         </div>
 
       </div>
@@ -685,10 +772,24 @@ export default function WatchPage({ params }) {
         )}
       </div>
 
-      <div className="watch-resizer" onMouseDown={handleResizerMouseDown} />
+      {chatCollapsed && (
+        <button className="watch-chat-reopen" onClick={() => setChatCollapsed(false)} title="Open chat">
+          «
+        </button>
+      )}
+      <div className="watch-resizer" onMouseDown={handleResizerMouseDown} style={{ display: chatCollapsed ? 'none' : '' }} />
 
       {/* Right panel - chat */}
-      <div className="watch-right" style={{ width: chatWidth, flex: 'none', ...(isMobile && chatHeight ? { height: chatHeight } : {}) }}>
+      <div
+        className={`watch-right${chatCollapsed ? ' collapsed' : ''}`}
+        style={{
+          width: chatCollapsed ? 0 : chatWidth,
+          flex: 'none',
+          transition: isResizing.current ? 'none' : 'width 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
+          ...(isMobile && chatHeight ? { height: chatHeight } : {}),
+        }}
+      >
+        <div className={`watch-chat-inner${chatCollapsed ? ' hidden' : ''}`}>
         <div className="watch-chat-header">
           <div className="watch-chat-header-left">
             <div className="watch-chat-avatar">AI</div>
@@ -700,6 +801,13 @@ export default function WatchPage({ params }) {
               </div>
             </div>
           </div>
+          <button
+            className="watch-chat-collapse"
+            onClick={() => setChatCollapsed(v => !v)}
+            title={chatCollapsed ? 'Expand chat' : 'Collapse chat'}
+          >
+            {chatCollapsed ? '«' : '»'}
+          </button>
         </div>
 
         <div className="watch-chat-messages" ref={messagesContainerRef}>
@@ -727,7 +835,15 @@ export default function WatchPage({ params }) {
               <div className="watch-bubble-avatar">AI</div>
               <div className="watch-bubble assistant watch-transcription-loading">
                 <div className="watch-transcription-spinner" />
-                <span>{transcriptionNotice}</span>
+                <div className="watch-transcription-info">
+                  <span className={`watch-transcription-word ${wordFade ? 'visible' : ''}`}>
+                    {TRANSCRIPTION_WORDS[wordIdx]}…
+                  </span>
+                  <span className="watch-transcription-detail">{transcriptionNotice}</span>
+                  {transcriptionElapsed > 0 && (
+                    <span className="watch-transcription-timer">{formatElapsed(transcriptionElapsed)}</span>
+                  )}
+                </div>
               </div>
             </div>
           )}
@@ -756,6 +872,7 @@ export default function WatchPage({ params }) {
               onClick={handleSendMessage}
               disabled={!chatInput.trim() || chatDisabled}
             >&#8593;</button>          </div>
+        </div>
         </div>
       </div>
     </div>
