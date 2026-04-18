@@ -17,9 +17,13 @@ class OpenRouterSummarizer:
         *,
         model: str = MODEL_CONFIG.phase2_summary_model,
         timeout_s: float = MODEL_CONFIG.openrouter_timeout_s,
+        mode: str = "chunk",
     ) -> None:
+        if mode not in {"chunk", "section"}:
+            raise ValueError(f"Unsupported summarizer mode: {mode}")
         self._model = model
         self._timeout_s = timeout_s
+        self._mode = mode
 
     async def summarize(self, chunk) -> tuple[str, str | None, list[str]]:
         if not settings.OPENROUTER_API_KEY:
@@ -45,13 +49,23 @@ class OpenRouterSummarizer:
         return summary, role, keywords[:8]
 
     async def _request_summary(self, text: str) -> str:
-        prompt = (
-            "Summarize the transcript chunk into one concise topic summary and keywords. "
-            "Return ONLY valid JSON with this exact shape: "
-            "{\"summary\": string, \"role\": string|null, \"keywords\": string[]}. "
-            "Rules: summary max 280 chars, 3-8 keywords, no markdown.\n\n"
-            f"Transcript chunk:\n{text}"
-        )
+        if self._mode == "section":
+            prompt = (
+                "Summarize this sequence of adjacent topic summaries into one "
+                "high-level section summary covering the whole span. "
+                "Return ONLY valid JSON with this exact shape: "
+                "{\"summary\": string, \"role\": string|null, \"keywords\": string[]}. "
+                "Rules: summary max 320 chars, 3-8 keywords, no markdown.\n\n"
+                f"Topic summaries:\n{text}"
+            )
+        else:
+            prompt = (
+                "Summarize the transcript chunk into one concise topic summary and keywords. "
+                "Return ONLY valid JSON with this exact shape: "
+                "{\"summary\": string, \"role\": string|null, \"keywords\": string[]}. "
+                "Rules: summary max 280 chars, 3-8 keywords, no markdown.\n\n"
+                f"Transcript chunk:\n{text}"
+            )
 
         async with httpx.AsyncClient() as client:
             result = await client.post(

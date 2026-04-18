@@ -179,12 +179,14 @@ class RAGPipeline:
         chunker: ChunkingStrategy | None = None,
         embedder: Embedder | None = None,
         summarizer: Summarizer | None = None,
+        section_summarizer: Summarizer | None = None,
         embed_batch_size: int = MODEL_CONFIG.rag_embed_batch_size,
     ) -> None:
         self._db = db
         self._chunker = chunker or FixedWindowChunker()
         self._embedder = embedder or OpenRouterEmbedder()
         self._summarizer = summarizer
+        self._section_summarizer = section_summarizer
         self._embed_batch_size = max(embed_batch_size, 1)
 
     # -- public entry point -------------------------------------------------
@@ -210,6 +212,7 @@ class RAGPipeline:
 
             processed_leaves = await self._embed_leaf_chunks(leaf_chunks)
             processed_topics: list[ProcessedChunk] = []
+            processed_sections: list[ProcessedChunk] = []
 
             if self._summarizer and processed_leaves:
                 topic_ranges = self._build_topic_ranges(processed_leaves)
@@ -226,7 +229,32 @@ class RAGPipeline:
                     len(processed_topics),
                 )
 
-            processed = processed_topics + processed_leaves
+                if (
+                    self._section_summarizer
+                    and len(processed_topics)
+                    >= MODEL_CONFIG.phase3_section_min_topic_chunks
+                ):
+                    section_ranges = self._build_section_ranges(processed_topics)
+                    section_chunks = self._build_section_chunks(
+                        topic_chunks,
+                        processed_topics,
+                        section_ranges,
+                    )
+                    processed_sections = await self._summarize_section_chunks(
+                        section_chunks
+                    )
+                    self._attach_section_parents(
+                        processed_topics,
+                        processed_sections,
+                        section_ranges,
+                    )
+                    logger.info(
+                        "RAG phase-3 sections complete for %s (section_chunks=%s)",
+                        transcription_id,
+                        len(processed_sections),
+                    )
+
+            processed = processed_sections + processed_topics + processed_leaves
 
             await self._store_chunks(transcription_id, processed)
             await self._set_status(transcription_id, "ready")
@@ -500,6 +528,116 @@ class RAGPipeline:
         for topic, (start_idx, end_idx) in zip(topics, topic_ranges):
             for leaf_idx in range(start_idx, end_idx + 1):
                 leaves[leaf_idx].parent_chunk_id = topic.chunk_id
+
+    def _build_section_ranges(
+        self,
+        topics: list[ProcessedChunk],
+    ) -> list[tuple[int, int]]:
+        if not topics:
+            return []
+
+        min_topics = MODEL_CONFIG.phase3_section_min_topic_chunks
+        max_topics = max(min_topics, MODEL_CONFIG.phase3_section_max_topic_chunks)
+        break_similarity = MODEL_CONFIG.phase3_section_break_similarity
+
+        ranges: list[tuple[int, int]] = []
+        start = 0
+
+        for idx in range(1, len(topics)):
+            prev = topics[idx - 1].summary_embedding or []
+            curr = topics[idx].summary_embedding or []
+            similarity = self._vector_similarity(prev, curr)
+            current_size = idx - start
+
+            should_break = current_size >= max_topics or (
+                current_size >= min_topics and similarity < break_similarity
+            )
+            if should_break:
+                ranges.append((start, idx - 1))
+                start = idx
+
+        ranges.append((start, len(topics) - 1))
+
+        if len(ranges) >= 2:
+            last_start, last_end = ranges[-1]
+            if last_end - last_start + 1 < min_topics:
+                prev_start, _ = ranges[-2]
+                ranges[-2] = (prev_start, last_end)
+                ranges.pop()
+
+        return ranges
+
+    def _build_section_chunks(
+        self,
+        topic_chunks: list[Chunk],
+        processed_topics: list[ProcessedChunk],
+        section_ranges: list[tuple[int, int]],
+    ) -> list[Chunk]:
+        sections: list[Chunk] = []
+        for idx, (start_idx, end_idx) in enumerate(section_ranges):
+            topic_range = topic_chunks[start_idx : end_idx + 1]
+            summary_texts: list[str] = []
+            for t_idx in range(start_idx, end_idx + 1):
+                summary = processed_topics[t_idx].summary
+                summary_texts.append(
+                    summary if summary else topic_chunks[t_idx].text
+                )
+            sections.append(
+                Chunk(
+                    idx=idx,
+                    level=3,
+                    start_s=topic_range[0].start_s,
+                    end_s=topic_range[-1].end_s,
+                    text=" ".join(summary_texts),
+                    segment_start_idx=topic_range[0].segment_start_idx,
+                    segment_end_idx=topic_range[-1].segment_end_idx,
+                )
+            )
+        return sections
+
+    async def _summarize_section_chunks(
+        self,
+        section_chunks: list[Chunk],
+    ) -> list[ProcessedChunk]:
+        if not self._section_summarizer:
+            return []
+
+        processed: list[ProcessedChunk] = []
+        for section in section_chunks:
+            summary, role, keywords = await self._section_summarizer.summarize(section)
+            summary_vector = None
+            if summary:
+                summary_vector = (await self._embed_texts([summary]))[0]
+
+            processed.append(
+                ProcessedChunk(
+                    chunk_id=str(uuid.uuid4()),
+                    idx=section.idx,
+                    level=3,
+                    start_s=section.start_s,
+                    end_s=section.end_s,
+                    text=section.text,
+                    segment_start_idx=section.segment_start_idx,
+                    segment_end_idx=section.segment_end_idx,
+                    summary=summary,
+                    role=role,
+                    keywords=keywords,
+                    embedding=None,
+                    summary_embedding=summary_vector,
+                )
+            )
+
+        return processed
+
+    def _attach_section_parents(
+        self,
+        topics: list[ProcessedChunk],
+        sections: list[ProcessedChunk],
+        section_ranges: list[tuple[int, int]],
+    ) -> None:
+        for section, (start_idx, end_idx) in zip(sections, section_ranges):
+            for topic_idx in range(start_idx, end_idx + 1):
+                topics[topic_idx].parent_chunk_id = section.chunk_id
 
     async def _embed_texts(self, texts: list[str]) -> list[list[float]]:
         vectors: list[list[float]] = []

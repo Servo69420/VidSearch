@@ -1,6 +1,6 @@
 import unittest
 
-from app.rag import RAGPipeline, RetrievedChunk
+from app.rag import Chunk, ProcessedChunk, RAGPipeline, RetrievedChunk
 
 
 class _FakeEmbedder:
@@ -81,6 +81,119 @@ class TestRAGSearch(unittest.IsolatedAsyncioTestCase):
             top_k=2,
         )
         self.assertEqual(result, [])
+
+
+def _topic(
+    idx: int,
+    embedding: list[float],
+    summary: str | None = None,
+) -> ProcessedChunk:
+    resolved_summary = f"summary {idx}" if summary is None else summary
+    return ProcessedChunk(
+        chunk_id=f"topic-{idx}",
+        idx=idx,
+        level=2,
+        start_s=float(idx * 30),
+        end_s=float((idx + 1) * 30),
+        text=f"topic text {idx}",
+        summary=resolved_summary,
+        summary_embedding=embedding,
+    )
+
+
+class TestSectionGrouping(unittest.TestCase):
+    def test_build_section_ranges_splits_on_low_similarity(self):
+        pipeline = RAGPipeline(_FakeDB(), embedder=_FakeEmbedder())
+        topics = [
+            _topic(0, [1.0, 0.0]),
+            _topic(1, [1.0, 0.0]),
+            _topic(2, [0.0, 1.0]),
+            _topic(3, [0.0, 1.0]),
+        ]
+
+        ranges = pipeline._build_section_ranges(topics)
+
+        self.assertEqual(ranges, [(0, 1), (2, 3)])
+
+    def test_build_section_ranges_merges_small_tail(self):
+        pipeline = RAGPipeline(_FakeDB(), embedder=_FakeEmbedder())
+        topics = [
+            _topic(0, [1.0, 0.0]),
+            _topic(1, [1.0, 0.0]),
+            _topic(2, [1.0, 0.0]),
+            _topic(3, [0.0, 1.0]),
+        ]
+
+        ranges = pipeline._build_section_ranges(topics)
+
+        self.assertEqual(len(ranges), 1)
+        start, end = ranges[0]
+        self.assertEqual(end - start + 1, 4)
+
+    def test_attach_section_parents_sets_parent_chunk_id(self):
+        pipeline = RAGPipeline(_FakeDB(), embedder=_FakeEmbedder())
+        topics = [
+            _topic(0, [1.0, 0.0]),
+            _topic(1, [1.0, 0.0]),
+            _topic(2, [0.0, 1.0]),
+            _topic(3, [0.0, 1.0]),
+        ]
+        ranges = [(0, 1), (2, 3)]
+        sections = [
+            ProcessedChunk(
+                chunk_id="section-0", idx=0, level=3,
+                start_s=0.0, end_s=60.0, text="s0",
+            ),
+            ProcessedChunk(
+                chunk_id="section-1", idx=1, level=3,
+                start_s=60.0, end_s=120.0, text="s1",
+            ),
+        ]
+
+        pipeline._attach_section_parents(topics, sections, ranges)
+
+        self.assertEqual(topics[0].parent_chunk_id, "section-0")
+        self.assertEqual(topics[1].parent_chunk_id, "section-0")
+        self.assertEqual(topics[2].parent_chunk_id, "section-1")
+        self.assertEqual(topics[3].parent_chunk_id, "section-1")
+
+    def test_build_section_chunks_uses_topic_summaries(self):
+        pipeline = RAGPipeline(_FakeDB(), embedder=_FakeEmbedder())
+        topic_chunks = [
+            Chunk(idx=0, level=2, start_s=0.0, end_s=30.0, text="raw 0",
+                  segment_start_idx=0, segment_end_idx=9),
+            Chunk(idx=1, level=2, start_s=30.0, end_s=60.0, text="raw 1",
+                  segment_start_idx=10, segment_end_idx=19),
+        ]
+        processed_topics = [
+            _topic(0, [1.0, 0.0], summary="intro summary"),
+            _topic(1, [1.0, 0.0], summary="follow-up summary"),
+        ]
+
+        sections = pipeline._build_section_chunks(
+            topic_chunks, processed_topics, [(0, 1)]
+        )
+
+        self.assertEqual(len(sections), 1)
+        self.assertEqual(sections[0].level, 3)
+        self.assertEqual(sections[0].start_s, 0.0)
+        self.assertEqual(sections[0].end_s, 60.0)
+        self.assertIn("intro summary", sections[0].text)
+        self.assertIn("follow-up summary", sections[0].text)
+        self.assertNotIn("raw 0", sections[0].text)
+
+    def test_build_section_chunks_falls_back_to_raw_when_summary_empty(self):
+        pipeline = RAGPipeline(_FakeDB(), embedder=_FakeEmbedder())
+        topic_chunks = [
+            Chunk(idx=0, level=2, start_s=0.0, end_s=30.0, text="raw 0"),
+        ]
+        processed_topics = [_topic(0, [1.0, 0.0], summary="")]
+
+        sections = pipeline._build_section_chunks(
+            topic_chunks, processed_topics, [(0, 0)]
+        )
+
+        self.assertIn("raw 0", sections[0].text)
 
 
 if __name__ == "__main__":

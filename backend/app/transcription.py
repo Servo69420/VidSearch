@@ -28,15 +28,20 @@ async def _run_rag_pipeline(
     summary_model: str,
 ) -> None:
     logger.info(
-        "Starting RAG indexing for transcription %s (embed=%s summary=%s)",
+        "Starting RAG indexing for transcription %s (embed=%s summary=%s section=%s)",
         transcription_id,
         embed_model,
         summary_model,
+        MODEL_CONFIG.phase3_summary_model,
     )
     pipeline = RAGPipeline(
         db,
         embedder=OpenRouterEmbedder(model=embed_model),
         summarizer=OpenRouterSummarizer(model=summary_model),
+        section_summarizer=OpenRouterSummarizer(
+            model=MODEL_CONFIG.phase3_summary_model,
+            mode="section",
+        ),
         embed_batch_size=MODEL_CONFIG.rag_embed_batch_size,
     )
     await pipeline.process(transcription_id)

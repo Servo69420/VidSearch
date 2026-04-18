@@ -45,6 +45,48 @@ class TestOpenRouterSummarizer(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(role)
         self.assertEqual(keywords, [])
 
+    async def test_summarize_uses_section_prompt_when_mode_section(self):
+        summarizer = OpenRouterSummarizer(
+            model="test-model", timeout_s=1.0, mode="section"
+        )
+
+        class _FakeResponse:
+            status_code = 200
+
+            def json(self):
+                return {
+                    "choices": [
+                        {"message": {"content": '{"summary":"ok","keywords":[]}'}}
+                    ]
+                }
+
+        captured = {}
+
+        class _FakeClient:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+            async def post(self, url, headers, json, timeout):
+                captured["body"] = json
+                return _FakeResponse()
+
+        with (
+            patch("app.summarizer.settings.OPENROUTER_API_KEY", "test-key"),
+            patch("app.summarizer.httpx.AsyncClient", lambda *a, **kw: _FakeClient()),
+        ):
+            await summarizer.summarize(SimpleNamespace(text="topic one. topic two."))
+
+        user_message = captured["body"]["messages"][-1]["content"]
+        self.assertIn("adjacent topic summaries", user_message)
+        self.assertNotIn("transcript chunk", user_message.lower())
+
+    def test_invalid_mode_raises(self):
+        with self.assertRaises(ValueError):
+            OpenRouterSummarizer(model="m", timeout_s=1.0, mode="bogus")
+
 
 if __name__ == "__main__":
     unittest.main()
