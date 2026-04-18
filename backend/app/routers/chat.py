@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 import httpx
 import uuid as _uuid
 from pydantic import BaseModel
@@ -28,7 +29,13 @@ SYSTEM_PROMPT = (
     "Every assistant turn MUST include a natural-language answer in the "
     "content field. When a player action is also appropriate (play, pause, "
     "mute, unmute, seek to a timestamp), emit one or more tool_calls "
-    "alongside the answer. Never reply with tool_calls and empty content."
+    "alongside the answer. Never reply with tool_calls and empty content. "
+    "Do NOT write tool calls as text in the content field (no "
+    "`ToolCall(...)`, no JSON like `[{\"tool_call_id\": ...}]`) — the "
+    "structured `tool_calls` field is the only place the UI reads them. "
+    "Format any mathematical notation using LaTeX inside `$...$` for inline "
+    "math (e.g. `$x^3$`, `$\\int_0^{10} f(x)\\,dx$`) and `$$...$$` for "
+    "display math, so the UI renders proper superscripts and symbols. "
     "The end user might also attach an image of the current video scene using a trigger button, incorparate it in your answer if relevant and if you understand the image content. "
 )
 
@@ -112,6 +119,23 @@ async def _call_openrouter(
     return result.json()
 
 
+_TOOLCALL_LITERAL_RE = re.compile(
+    r"\[?\s*ToolCall\s*\([^\[\]]*?\)\s*\]?", re.IGNORECASE
+)
+
+_TOOLCALL_JSON_RE = re.compile(
+    r"""\.?\s*\[?\s*\{\s*["']tool_call_id["'][\s\S]*?(?:\}\s*\]|\}|$)""",
+)
+
+
+def _strip_tool_call_literals(text: str) -> str:
+    if not text:
+        return text
+    cleaned = _TOOLCALL_LITERAL_RE.sub("", text)
+    cleaned = _TOOLCALL_JSON_RE.sub("", cleaned)
+    return cleaned.strip()
+
+
 def _tool_call_fallback_text(tool_calls: list[dict]) -> str:
     return ", ".join(
         f"*{tc['function']['name'].replace('_', ' ')}*" for tc in tool_calls
@@ -175,6 +199,8 @@ async def _run_chat_loop(
             logger.exception(
                 "Follow-up OpenRouter call failed; keeping round-1 content"
             )
+
+    final_content = _strip_tool_call_literals(final_content)
 
     if not final_content and final_tool_calls:
         final_content = _tool_call_fallback_text(final_tool_calls)

@@ -1,6 +1,9 @@
 import { memo } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import remarkMath from 'remark-math'
+import rehypeKatex from 'rehype-katex'
+import 'katex/dist/katex.min.css'
 import './MarkdownMessage.css'
 
 const TIMESTAMP_RE = /\b(\d{1,2}:\d{2}(?::\d{2})?)\b/g
@@ -46,7 +49,11 @@ const MarkdownMessage = memo(function MarkdownMessage({ content, onTimestampClic
 
   return (
     <div className="markdown-message">
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm, remarkMath]}
+        rehypePlugins={[rehypeKatex]}
+        components={components}
+      >
         {processed}
       </ReactMarkdown>
     </div>

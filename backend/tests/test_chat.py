@@ -174,6 +174,79 @@ class TestBuildToolResultTurns(unittest.TestCase):
         self.assertEqual(turns[0]["content"], "preamble")
 
 
+class TestStripToolCallLiterals(unittest.TestCase):
+    def test_strips_bracketed_toolcall_repr(self):
+        text = "[ToolCall(func_name='seek_video', parameters={'seconds': 428.0})] Jumping now."
+        self.assertEqual(
+            chat_module._strip_tool_call_literals(text), "Jumping now."
+        )
+
+    def test_strips_unbracketed_toolcall_repr(self):
+        text = "ToolCall(func_name='play_video', parameters={}) Starting playback."
+        self.assertEqual(
+            chat_module._strip_tool_call_literals(text), "Starting playback."
+        )
+
+    def test_strips_multiple_occurrences(self):
+        text = (
+            "[ToolCall(func_name='seek_video', parameters={'seconds': 10})] then "
+            "[ToolCall(func_name='play_video', parameters={})] done."
+        )
+        self.assertEqual(
+            chat_module._strip_tool_call_literals(text), "then  done."
+        )
+
+    def test_leaves_normal_text_unchanged(self):
+        text = "I jumped to 2:00 and resumed playback."
+        self.assertEqual(chat_module._strip_tool_call_literals(text), text)
+
+    def test_strips_truncated_json_tool_call_fragment(self):
+        text = (
+            'mentioned around [].[{"tool_call_id": "651", "tool_type": "'
+        )
+        self.assertEqual(
+            chat_module._strip_tool_call_literals(text),
+            "mentioned around []",
+        )
+
+    def test_strips_complete_json_tool_call_fragment(self):
+        text = (
+            'Done [{"tool_call_id": "abc", "name": "seek_video"}] cool.'
+        )
+        self.assertEqual(
+            chat_module._strip_tool_call_literals(text),
+            "Done cool.",
+        )
+
+    def test_strips_bare_json_tool_call_dict(self):
+        text = 'Here: {"tool_call_id": "xyz"} finished.'
+        self.assertEqual(
+            chat_module._strip_tool_call_literals(text),
+            "Here: finished.",
+        )
+
+    def test_empty_input_returns_empty(self):
+        self.assertEqual(chat_module._strip_tool_call_literals(""), "")
+
+    async def _run_loop_with_hallucinated_literal(self):
+        tool_calls = [_tc("c1", "seek_video", '{"seconds": 428}')]
+        hallucinated = (
+            "[ToolCall(func_name='seek_video', parameters={'seconds': 428.0})]"
+            " Jumping to 7:08."
+        )
+        mock = AsyncMock(
+            side_effect=[_oai("", tool_calls), _oai(hallucinated, None)]
+        )
+        with patch.object(chat_module, "_call_openrouter", mock):
+            return await chat_module._run_chat_loop([])
+
+    def test_run_loop_strips_literal_from_final_content(self):
+        import asyncio
+
+        content, _ = asyncio.run(self._run_loop_with_hallucinated_literal())
+        self.assertEqual(content, "Jumping to 7:08.")
+
+
 class TestToolCallFallbackText(unittest.TestCase):
     def test_joins_tool_names_with_underscores_replaced(self):
         text = chat_module._tool_call_fallback_text(
