@@ -23,7 +23,7 @@ export default function AdminPage() {
   const [stats, setStats] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [exporting, setExporting] = useState(false)
+  const [exporting, setExporting] = useState(null)
 
   useEffect(() => {
     if (user && !user.is_admin) {
@@ -48,11 +48,11 @@ export default function AdminPage() {
     }
   }
 
-  async function handleExport() {
-    setExporting(true)
+  async function handleExport(endpoint, fallbackName) {
+    setExporting(endpoint)
     const token = localStorage.getItem('auth_token')
     try {
-      const res = await fetch(`${API_BASE}/admin/stats/export.csv`, {
+      const res = await fetch(`${API_BASE}/admin/${endpoint}`, {
         headers: { Authorization: `Bearer ${token}` },
       })
       if (!res.ok) throw new Error('Export failed.')
@@ -62,7 +62,7 @@ export default function AdminPage() {
       a.href = url
       const cd = res.headers.get('content-disposition') || ''
       const match = cd.match(/filename=(.+)/)
-      a.download = match ? match[1] : 'vidsearch_stats.csv'
+      a.download = match ? match[1] : fallbackName
       document.body.appendChild(a)
       a.click()
       document.body.removeChild(a)
@@ -70,7 +70,7 @@ export default function AdminPage() {
     } catch (e) {
       setError(e.message)
     } finally {
-      setExporting(false)
+      setExporting(null)
     }
   }
 
@@ -86,13 +86,29 @@ export default function AdminPage() {
             {stats && ` · ${new Date(stats.generated_at).toLocaleString()}`}
           </p>
         </div>
-        <button
-          className="adm-export-btn"
-          onClick={handleExport}
-          disabled={exporting || !stats}
-        >
-          {exporting ? 'Exporting…' : 'Export to CSV'}
-        </button>
+        <div className="adm-export-group">
+          <button
+            className="adm-export-btn"
+            onClick={() => handleExport('stats/export.csv', 'vidsearch_stats.csv')}
+            disabled={!!exporting || !stats}
+          >
+            {exporting === 'stats/export.csv' ? 'Exporting…' : 'Users CSV'}
+          </button>
+          <button
+            className="adm-export-btn"
+            onClick={() => handleExport('transcriptions/export.csv', 'vidsearch_transcriptions.csv')}
+            disabled={!!exporting || !stats}
+          >
+            {exporting === 'transcriptions/export.csv' ? 'Exporting…' : 'Transcriptions CSV'}
+          </button>
+          <button
+            className="adm-export-btn"
+            onClick={() => handleExport('videos/export.csv', 'vidsearch_videos.csv')}
+            disabled={!!exporting || !stats}
+          >
+            {exporting === 'videos/export.csv' ? 'Exporting…' : 'Videos CSV'}
+          </button>
+        </div>
       </div>
 
       {error && <p className="adm-error">{error}</p>}

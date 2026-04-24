@@ -169,3 +169,127 @@ async def export_stats_csv(_admin=Depends(require_admin), db=Depends(get_db)):
         media_type="text/csv",
         headers={"Content-Disposition": f"attachment; filename={filename}"},
     )
+
+
+@router.get("/transcriptions/export.csv")
+async def export_transcriptions_csv(_admin=Depends(require_admin), db=Depends(get_db)):
+    rows = await db.fetch(
+        """
+        SELECT
+            COALESCE(yv.title, uv.file_name, 'Unknown') AS title,
+            COALESCE(yv.source_type, 'upload')          AS source_type,
+            COALESCE(yv.source_url, '')                 AS source_url,
+            t.language,
+            t.status,
+            t.model_version,
+            t.created_at,
+            COALESCE(length(t.full_text), 0)            AS char_count,
+            u.username
+        FROM transcriptions t
+        LEFT JOIN yt_videos yv   ON yv.id = t.video_id
+        LEFT JOIN user_videos uv ON uv.id = t.user_video_id
+        LEFT JOIN users u        ON u.id = uv.user_id
+        ORDER BY t.created_at
+        """
+    )
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow([
+        "title", "source_type", "source_url", "language", "status",
+        "model_version", "created_at", "word_count", "est_minutes", "username",
+    ])
+    for r in rows:
+        word_count = r["char_count"] // 5
+        est_min = round(word_count / 130, 2)
+        writer.writerow([
+            r["title"],
+            r["source_type"],
+            r["source_url"],
+            r["language"] or "",
+            r["status"],
+            r["model_version"] or "",
+            r["created_at"].isoformat() if r["created_at"] else "",
+            word_count,
+            est_min,
+            r["username"] or "",
+        ])
+
+    output.seek(0)
+    ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    filename = f"vidsearch_transcriptions_{ts}.csv"
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
+@router.get("/videos/export.csv")
+async def export_videos_csv(_admin=Depends(require_admin), db=Depends(get_db)):
+    yt_rows = await db.fetch(
+        """
+        SELECT
+            yv.title,
+            'youtube'       AS source_type,
+            yv.source_url,
+            yv.created_at,
+            t.status        AS transcription_status,
+            t.language
+        FROM yt_videos yv
+        LEFT JOIN transcriptions t ON t.video_id = yv.id
+        ORDER BY yv.created_at
+        """
+    )
+    upload_rows = await db.fetch(
+        """
+        SELECT
+            uv.file_name    AS title,
+            'upload'        AS source_type,
+            ''              AS source_url,
+            uv.created_at,
+            t.status        AS transcription_status,
+            t.language,
+            u.username
+        FROM user_videos uv
+        JOIN users u ON u.id = uv.user_id
+        LEFT JOIN transcriptions t ON t.user_video_id = uv.id
+        ORDER BY uv.created_at
+        """
+    )
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow([
+        "title", "source_type", "source_url", "created_at",
+        "transcription_status", "language", "uploaded_by",
+    ])
+    for r in yt_rows:
+        writer.writerow([
+            r["title"] or "",
+            r["source_type"],
+            r["source_url"] or "",
+            r["created_at"].isoformat() if r["created_at"] else "",
+            r["transcription_status"] or "none",
+            r["language"] or "",
+            "",
+        ])
+    for r in upload_rows:
+        writer.writerow([
+            r["title"] or "",
+            r["source_type"],
+            r["source_url"],
+            r["created_at"].isoformat() if r["created_at"] else "",
+            r["transcription_status"] or "none",
+            r["language"] or "",
+            r["username"] or "",
+        ])
+
+    output.seek(0)
+    ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    filename = f"vidsearch_videos_{ts}.csv"
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )

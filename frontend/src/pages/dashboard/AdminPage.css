@@ -37,6 +37,13 @@
 .adm-export-btn:hover:not(:disabled) { background: var(--navy-light); }
 .adm-export-btn:disabled { opacity: 0.6; cursor: not-allowed; }
 
+.adm-export-group {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .adm-error {
   color: var(--error);
   font-size: var(--text-sm);
