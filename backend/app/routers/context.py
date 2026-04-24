@@ -63,6 +63,62 @@ async def get_transcript(video_id: str, db) -> dict[str, Any] | None:
     return dict(row) if row else None
 
 
+async def fetch_chunks_at_time(
+    video_id: str,
+    current_time_s: float,
+    db,
+    *,
+    window_s: float = 45.0,
+) -> list[dict[str, Any]]:
+    """Return level-1 transcript chunks covering current_time_s, or nearest within window_s."""
+    transcript = await get_transcript(video_id, db)
+    if not transcript or transcript.get("status") != "ready":
+        return []
+
+    tid = str(transcript["id"])
+
+    rows = await db.fetch(
+        """
+        SELECT idx, level, start_s, end_s, text, summary
+        FROM transcript_chunks
+        WHERE transcription_id = $1::uuid
+          AND level = 1
+          AND start_s <= $2 AND end_s >= $2
+        ORDER BY start_s
+        """,
+        tid,
+        current_time_s,
+    )
+
+    if not rows:
+        rows = await db.fetch(
+            """
+            SELECT idx, level, start_s, end_s, text, summary
+            FROM transcript_chunks
+            WHERE transcription_id = $1::uuid
+              AND level = 1
+              AND ABS(start_s - $2) <= $3
+            ORDER BY ABS(start_s - $2)
+            LIMIT 2
+            """,
+            tid,
+            current_time_s,
+            window_s,
+        )
+
+    return [
+        {
+            "idx": r["idx"],
+            "level": r["level"],
+            "start_s": r["start_s"],
+            "end_s": r["end_s"],
+            "text": r["text"],
+            "topic_summary": r["summary"],
+        }
+        for r in rows
+    ]
+
+
 async def search_video_context(
     video_id: str,
     query: str,

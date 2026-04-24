@@ -62,7 +62,7 @@ async function loadHistoryFromAPI(videoId) {
   return rows.map(r => ({ role: r.role, text: r.content }))
 }
 
-async function sendMessageToAPI(videoId, messages, frameBase64) {
+async function sendMessageToAPI(videoId, messages, frameBase64, currentTimeS) {
   const res = await fetch(`${API_BASE}/chat/ask`, {
     method: 'POST',
     headers: {
@@ -75,6 +75,7 @@ async function sendMessageToAPI(videoId, messages, frameBase64) {
         .filter(m => m.role === 'user')
         .map(m => ({ role: m.role, content: m.text })),
       ...(frameBase64 ? { frame_base64: frameBase64 } : {}),
+      ...(currentTimeS != null ? { current_time_s: currentTimeS } : {}),
     }),
   })
   if (!res.ok) {
@@ -535,6 +536,10 @@ export default function WatchPage({ params }) {
         }
       } else if (name === 'seek_video') {
         const seconds = args.seconds ?? 0
+        const currentTime = localVideoUrl
+          ? (getLocalVideoEl()?.currentTime ?? null)
+          : (ytReadyRef.current ? ytPlayerRef.current?.getCurrentTime() : null)
+        if (currentTime != null && Math.abs(currentTime - seconds) < 20) break
         if (localVideoUrl) {
           const el = getLocalVideoEl()
           if (el) el.currentTime = seconds
@@ -609,8 +614,12 @@ export default function WatchPage({ params }) {
 
     const frameBase64 = shouldCapture ? await captureCurrentFrame() : null
 
+    const currentTimeS = localVideoUrl
+      ? (getLocalVideoEl()?.currentTime ?? null)
+      : (ytReadyRef.current ? (ytPlayerRef.current?.getCurrentTime() ?? null) : null)
+
     try {
-      const { text, toolCalls } = await sendMessageToAPI(uploadedVideoId || videoId, updatedMessages, frameBase64)
+      const { text, toolCalls } = await sendMessageToAPI(uploadedVideoId || videoId, updatedMessages, frameBase64, currentTimeS)
 
       // Execute any tool calls (play/pause)
       if (toolCalls.length > 0) {

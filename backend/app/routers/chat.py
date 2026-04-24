@@ -8,7 +8,7 @@ from app.config import settings
 from fastapi import APIRouter, HTTPException, Depends
 from app.dependencies import get_current_user
 from app.database import get_db
-from app.routers.context import get_transcript, search_video_context
+from app.routers.context import get_transcript, search_video_context, fetch_chunks_at_time
 from app.routers.video_player_tools import VIDEO_PLAYER_TOOLS
 from app.youtube import normalize_youtube_ref, resolve_or_create_yt_video
 from app.model_config import MODEL_CONFIG
@@ -30,6 +30,11 @@ SYSTEM_PROMPT = (
     "content field. When a player action is also appropriate (play, pause, "
     "mute, unmute, seek to a timestamp), emit one or more tool_calls "
     "alongside the answer. Never reply with tool_calls and empty content. "
+    "IMPORTANT: When the user asks what is happening NOW or CURRENTLY (e.g. "
+    "'what does he say now?', 'what is presented now?'), you already have "
+    "the current position context in the grounding — answer from it directly "
+    "WITHOUT calling seek_video. Only call seek_video when the user "
+    "explicitly asks to jump to a DIFFERENT part of the video. "
     "Do NOT write tool calls as text in the content field (no "
     "`ToolCall(...)`, no JSON like `[{\"tool_call_id\": ...}]`) — the "
     "structured `tool_calls` field is the only place the UI reads them. "
@@ -48,6 +53,7 @@ class Chatrequest(BaseModel):
     video_id: str
     message: list[dict]
     frame_base64: str | None = None
+    current_time_s: float | None = None
 
 
 def is_uuid(val: str) -> bool:
@@ -127,12 +133,49 @@ _TOOLCALL_JSON_RE = re.compile(
     r"""\.?\s*\[?\s*\{\s*["']tool_call_id["'][\s\S]*?(?:\}\s*\]|\}|$)""",
 )
 
+# Gemma / mistral native tool-call tags: <tool_call>...</tool_call>,
+# <|tool_call|>...</|tool_call|>, or the mixed <|tool_call>...</tool_call|>
+_GEMMA_TOOLCALL_RE = re.compile(
+    r"(?:<\|tool_call\|?>|<tool_call>)[\s\S]*?(?:</\|?tool_call\|?>|<tool_call\|>)",
+    re.IGNORECASE,
+)
+
+
+def _parse_gemma_tool_calls(text: str) -> tuple[str, list[dict]]:
+    """Extract Gemma-style inline tool calls; return (cleaned_text, tool_calls)."""
+    extracted: list[dict] = []
+
+    def _replacer(m: re.Match) -> str:
+        inner = m.group(0)
+        json_match = re.search(r"\{[\s\S]*\}", inner)
+        if json_match:
+            try:
+                parsed = json.loads(json_match.group())
+                name = parsed.get("name") or parsed.get("function")
+                args = parsed.get("arguments") or parsed.get("parameters") or {}
+                if name:
+                    extracted.append({
+                        "id": f"gemma_{len(extracted)}",
+                        "type": "function",
+                        "function": {
+                            "name": name,
+                            "arguments": json.dumps(args),
+                        },
+                    })
+            except (json.JSONDecodeError, AttributeError, TypeError):
+                pass
+        return ""
+
+    cleaned = _GEMMA_TOOLCALL_RE.sub(_replacer, text).strip()
+    return cleaned, extracted
+
 
 def _strip_tool_call_literals(text: str) -> str:
     if not text:
         return text
     cleaned = _TOOLCALL_LITERAL_RE.sub("", text)
     cleaned = _TOOLCALL_JSON_RE.sub("", cleaned)
+    cleaned, _ = _parse_gemma_tool_calls(cleaned)
     return cleaned.strip()
 
 
@@ -142,23 +185,14 @@ def _tool_call_fallback_text(tool_calls: list[dict]) -> str:
     )
 
 
-def _build_tool_result_turns(tool_calls: list[dict], round1_content: str) -> list[dict]:
-    turns: list[dict] = [
-        {
-            "role": "assistant",
-            "content": round1_content if round1_content else None,
-            "tool_calls": tool_calls,
-        }
+def _build_followup_turns(tool_calls: list[dict], round1_content: str) -> list[dict]:
+    assistant_content = round1_content or (
+        "I've initiated the video action. Now let me answer your question."
+    )
+    return [
+        {"role": "assistant", "content": assistant_content},
+        {"role": "user", "content": "Please give a brief natural-language answer to my question."},
     ]
-    for tc in tool_calls:
-        turns.append(
-            {
-                "role": "tool",
-                "tool_call_id": tc.get("id"),
-                "content": json.dumps({"status": "dispatched"}),
-            }
-        )
-    return turns
 
 
 async def _run_chat_loop(
@@ -171,6 +205,14 @@ async def _run_chat_loop(
     round1_content = msg_1.get("content") or ""
     round1_tool_calls = msg_1.get("tool_calls") or []
 
+    # Gemma/mistral models embed tool calls as text rather than structured fields.
+    # Extract them so round 2 still runs and the user gets a real answer.
+    if not round1_tool_calls and round1_content:
+        round1_content, gemma_calls = _parse_gemma_tool_calls(round1_content)
+        if gemma_calls:
+            round1_tool_calls = gemma_calls
+            logger.info("Extracted %s Gemma-format tool call(s) from content", len(gemma_calls))
+
     final_content = round1_content
     final_tool_calls = round1_tool_calls
 
@@ -179,7 +221,7 @@ async def _run_chat_loop(
             "Chat tool_calls in round 1 (count=%s); running follow-up for explanation",
             len(round1_tool_calls),
         )
-        followup_messages = openai_messages + _build_tool_result_turns(
+        followup_messages = openai_messages + _build_followup_turns(
             round1_tool_calls, round1_content
         )
         try:
@@ -287,6 +329,34 @@ async def ask(
             )
 
     openai_messages: list[dict] = [{"role": "system", "content": SYSTEM_PROMPT}]
+
+    if request.current_time_s is not None:
+        current_chunks: list[dict] = []
+        try:
+            current_chunks = await fetch_chunks_at_time(
+                request.video_id, request.current_time_s, db
+            )
+        except Exception:
+            logger.exception("fetch_chunks_at_time failed")
+
+        if current_chunks:
+            lines = [
+                f"Transcript at the user's current playback position "
+                f"({_format_seconds(request.current_time_s)}) — this is what is being said RIGHT NOW:",
+            ]
+            for c in current_chunks:
+                lines.append(
+                    f"[{_format_seconds(c['start_s'])} - {_format_seconds(c['end_s'])}] {c['text']}"
+                )
+            openai_messages.append({"role": "system", "content": "\n".join(lines)})
+        else:
+            openai_messages.append({
+                "role": "system",
+                "content": (
+                    f"The user is currently at {_format_seconds(request.current_time_s)} "
+                    f"({request.current_time_s:.1f}s) in the video."
+                ),
+            })
 
     if retrieved_chunks:
         openai_messages.append(
