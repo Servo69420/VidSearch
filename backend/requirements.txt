@@ -9,7 +9,7 @@ python-multipart
 httpx
 
 # For audio processing and transcription
-groq
+openai
 ffmpeg-python
 youtube-transcript-api
 yt-dlp

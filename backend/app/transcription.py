@@ -3,7 +3,7 @@ import json
 import logging
 from abc import ABC, abstractmethod
 
-from groq import Groq
+from openai import OpenAI
 from youtube_transcript_api import YouTubeTranscriptApi
 
 from app.config import settings
@@ -131,25 +131,23 @@ class YouTubeTranscriber(BaseTranscriber):
 
 MAX_AUDIO_SECONDS = 60 * 30  # 30 minutes
 
-_groq_client: Groq | None = None
+_openai_client: OpenAI | None = None
 
 
-def _get_groq_client() -> Groq:
-    global _groq_client
-    if _groq_client is None:
-        key = settings.GROQ_API_KEY
-        logger.warning("Creating Groq client with key: %s...%s (len=%d)", key[:8], key[-4:], len(key))
-        _groq_client = Groq(api_key=key)
-    return _groq_client
+def _get_openai_client() -> OpenAI:
+    global _openai_client
+    if _openai_client is None:
+        _openai_client = OpenAI(api_key=settings.OPENAI_API_KEY)
+    return _openai_client
 
 
 class VideoFileTranscriber(BaseTranscriber):
-    def _call_groq(self, audio_path: str):
-        client = _get_groq_client()
+    def _call_whisper(self, audio_path: str):
+        client = _get_openai_client()
         with open(audio_path, "rb") as f:
             return client.audio.transcriptions.create(
-                file=(audio_path, f.read()),
-                model="whisper-large-v3-turbo",
+                file=(audio_path, f),
+                model="whisper-1",
                 response_format="verbose_json",
                 timestamp_granularities=["segment"],
             )
@@ -159,7 +157,7 @@ class VideoFileTranscriber(BaseTranscriber):
     ) -> dict:
         audio_path = await asyncio.to_thread(video_to_audio, source)
         try:
-            result = await asyncio.to_thread(self._call_groq, audio_path)
+            result = await asyncio.to_thread(self._call_whisper, audio_path)
             full_text = result.text
             segments = [
                 {"start": s.start, "end": s.end, "text": s.text}
@@ -175,11 +173,20 @@ class VideoFileTranscriber(BaseTranscriber):
                 full_text,
                 json.dumps(segments),
                 language,
-                "groq-whisper-large-v3-turbo",
+                "openai-whisper-1",
             )
         finally:
             await asyncio.to_thread(delete_temporary_audio_file, audio_path)
 
+        await _run_rag_pipeline(
+            db,
+            str(row["id"]),
+            MODEL_CONFIG.embedding_model,
+            MODEL_CONFIG.phase2_summary_model,
+        )
+        row = await db.fetchrow(
+            "SELECT * FROM transcriptions WHERE id = $1::uuid", row["id"]
+        )
         return dict(row)
 
 

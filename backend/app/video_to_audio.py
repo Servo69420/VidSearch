@@ -36,13 +36,14 @@ class FFmpegAudioExtractor(BaseAudioExtractor):
     def extract(self, video_path: str) -> str:
         if not os.path.exists(video_path):
             raise FileNotFoundError(f"Video not found: {video_path}")
-        tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+        tmp = tempfile.NamedTemporaryFile(suffix=".mp3", delete=False)
         tmp.close()
         try:
             (
                 ffmpeg
                 .input(video_path)
-                .output(tmp.name, ac=self.__channels, ar=self.__sample_rate, format="wav")
+                .output(tmp.name, ac=self.__channels, ar=self.__sample_rate,
+                        format="mp3", audio_bitrate="64k")
                 .overwrite_output()
                 .run(cmd=_ffmpeg_cmd(), capture_stdout=True, capture_stderr=True)
             )
