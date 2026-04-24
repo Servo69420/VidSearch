@@ -2,6 +2,14 @@
 #Added tests : conda run -n VidSearchpy11 python -m unittest discover -s tests -v
 #Added tests : conda run -n VidSearchpy12 python -m unittest discover -s tests -v
 
+import os
+import sys
+
+# Ensure the conda env's binaries (ffmpeg, etc.) are visible to subprocesses.
+_conda_bin = os.path.join(sys.prefix, "Library", "bin")
+if _conda_bin not in os.environ.get("PATH", ""):
+    os.environ["PATH"] = _conda_bin + os.pathsep + os.environ.get("PATH", "")
+
 import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path

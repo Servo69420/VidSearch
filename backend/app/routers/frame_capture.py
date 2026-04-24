@@ -11,15 +11,31 @@ from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 
 from app.dependencies import get_current_user
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
 def _resolve_tool(name: str) -> str:
-    """Find the absolute path to an executable, or fall back to the bare name."""
+    # Explicit config override takes priority.
+    if name == "ffmpeg" and settings.FFMPEG_PATH and os.path.isfile(settings.FFMPEG_PATH):
+        return settings.FFMPEG_PATH
     exe = shutil.which(name) or shutil.which(f"{name}.exe")
-    return exe or name
+    if exe:
+        return exe
+    conda_bin = os.path.join(sys.prefix, "Library", "bin", f"{name}.exe")
+    if os.path.isfile(conda_bin):
+        return conda_bin
+    return name
+
+
+def _subprocess_env() -> dict:
+    env = os.environ.copy()
+    conda_bin = os.path.join(sys.prefix, "Library", "bin")
+    if conda_bin not in env.get("PATH", ""):
+        env["PATH"] = conda_bin + os.pathsep + env.get("PATH", "")
+    return env
 
 
 def _run_sync(cmd: list[str], timeout: float) -> subprocess.CompletedProcess:
@@ -29,6 +45,7 @@ def _run_sync(cmd: list[str], timeout: float) -> subprocess.CompletedProcess:
         stderr=subprocess.PIPE,
         timeout=timeout,
         check=False,
+        env=_subprocess_env(),
     )
 
 
@@ -46,85 +63,57 @@ async def capture_frame(
         raise HTTPException(status_code=400, detail="Timestamp must be non-negative.")
 
     video_url = f"https://www.youtube.com/watch?v={request.video_id}"
-
     ytdlp_cmd = [sys.executable, "-m", "yt_dlp"]
     ffmpeg_path = _resolve_tool("ffmpeg")
 
-    logger.info(
-        "capture-frame start video=%s ts=%s ffmpeg=%s",
-        request.video_id, request.timestamp, ffmpeg_path,
+    logger.warning(
+        "capture-frame start video=%s ts=%s ffmpeg=%s sys.prefix=%s",
+        request.video_id, request.timestamp, ffmpeg_path, sys.prefix,
     )
 
     ts = float(request.timestamp)
-    clip_start = max(0.0, ts - 0.5)
-    clip_end = ts + 1.5
-
     tmp_dir = tempfile.mkdtemp(prefix="vidsearch_frame_")
-    output_template = os.path.join(tmp_dir, "clip.%(ext)s")
     tmp_jpg_path = os.path.join(tmp_dir, "frame.jpg")
     try:
-        # Step 1: download only the tiny time window around the target timestamp.
-        dl_cmd = [
+        # Step 1: ask yt-dlp for the raw stream URL — no ffmpeg needed.
+        url_cmd = [
             *ytdlp_cmd,
-            "-f", "best[ext=mp4]/best",
-            "--download-sections", f"*{clip_start}-{clip_end}",
-            "--force-keyframes-at-cuts",
-            "--ffmpeg-location", ffmpeg_path,
-            "-o", output_template,
+            "-f", "best[height<=480][ext=mp4]/best[height<=480]/best[ext=mp4]/best",
+            "--get-url",
             "--no-playlist",
-            "--no-warnings",
             video_url,
         ]
-        result = await asyncio.to_thread(_run_sync, dl_cmd, 90)
-
-        # Find whatever file yt-dlp actually produced in the temp dir.
-        produced = [
-            os.path.join(tmp_dir, f)
-            for f in os.listdir(tmp_dir)
-            if f.startswith("clip.") and os.path.getsize(os.path.join(tmp_dir, f)) > 0
-        ]
-
-        if result.returncode != 0 or not produced:
+        url_result = await asyncio.to_thread(_run_sync, url_cmd, 30)
+        if url_result.returncode != 0:
             logger.error(
-                "yt-dlp download-sections failed code=%s files=%s stdout=%s stderr=%s",
-                result.returncode,
-                os.listdir(tmp_dir),
-                result.stdout.decode(errors="replace")[-400:],
-                result.stderr.decode(errors="replace")[-800:],
+                "yt-dlp get-url failed code=%s stderr=%s",
+                url_result.returncode,
+                url_result.stderr.decode(errors="replace")[-600:],
             )
-            raise HTTPException(status_code=502, detail="Failed to fetch video clip.")
+            raise HTTPException(status_code=502, detail="Failed to resolve video URL.")
 
-        clip_path = produced[0]
-        logger.info("capture-frame downloaded clip=%s size=%s", clip_path, os.path.getsize(clip_path))
+        stream_url = url_result.stdout.decode(errors="replace").strip().splitlines()[0]
+        if not stream_url:
+            raise HTTPException(status_code=502, detail="yt-dlp returned no stream URL.")
 
-        # Step 2: extract a single frame from the tiny local clip.
-        seek_within_clip = ts - clip_start
+        # Step 2: ffmpeg seeks in the stream and grabs one frame — no full download.
         ff_cmd = [
             ffmpeg_path,
-            "-ss", str(seek_within_clip),
-            "-i", clip_path,
+            "-ss", str(ts),
+            "-i", stream_url,
             "-vframes", "1",
             "-q:v", "2",
             "-y",
             tmp_jpg_path,
         ]
-        result = await asyncio.to_thread(_run_sync, ff_cmd, 30)
-        if result.returncode != 0 or not os.path.exists(tmp_jpg_path) or os.path.getsize(tmp_jpg_path) == 0:
+        ff_result = await asyncio.to_thread(_run_sync, ff_cmd, 60)
+        if ff_result.returncode != 0 or not os.path.exists(tmp_jpg_path) or os.path.getsize(tmp_jpg_path) == 0:
             logger.error(
-                "ffmpeg exited %s stderr=%s",
-                result.returncode, result.stderr.decode(errors="replace")[-500:],
+                "ffmpeg frame extract failed code=%s stderr=%s",
+                ff_result.returncode,
+                ff_result.stderr.decode(errors="replace")[-600:],
             )
-            # Fallback: try without the seek — maybe the clip is too short.
-            ff_cmd_fallback = [
-                ffmpeg_path, "-i", clip_path, "-vframes", "1", "-q:v", "2", "-y", tmp_jpg_path,
-            ]
-            result = await asyncio.to_thread(_run_sync, ff_cmd_fallback, 30)
-            if result.returncode != 0 or not os.path.exists(tmp_jpg_path) or os.path.getsize(tmp_jpg_path) == 0:
-                logger.error(
-                    "ffmpeg fallback exited %s stderr=%s",
-                    result.returncode, result.stderr.decode(errors="replace")[-500:],
-                )
-                raise HTTPException(status_code=502, detail="ffmpeg failed. See server logs.")
+            raise HTTPException(status_code=502, detail="ffmpeg failed to extract frame.")
 
         with open(tmp_jpg_path, "rb") as f:
             image_data = f.read()
@@ -133,6 +122,7 @@ async def capture_frame(
             raise HTTPException(status_code=502, detail="Frame extraction produced no output.")
 
         return {"image_base64": base64.b64encode(image_data).decode()}
+
     except (asyncio.TimeoutError, subprocess.TimeoutExpired):
         raise HTTPException(status_code=504, detail="Frame capture timed out.")
     except FileNotFoundError:
@@ -144,7 +134,4 @@ async def capture_frame(
         logger.exception("frame capture failed")
         raise HTTPException(status_code=502, detail="Failed to capture frame.")
     finally:
-        try:
-            shutil.rmtree(tmp_dir, ignore_errors=True)
-        except OSError:
-            pass
+        shutil.rmtree(tmp_dir, ignore_errors=True)
