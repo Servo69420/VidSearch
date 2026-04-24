@@ -3,8 +3,10 @@ import json
 import logging
 from abc import ABC, abstractmethod
 
-import whisper
+from openai import OpenAI
 from youtube_transcript_api import YouTubeTranscriptApi
+
+from app.config import settings
 
 from app.model_config import MODEL_CONFIG
 from app.embedder import OpenRouterEmbedder
@@ -127,27 +129,41 @@ class YouTubeTranscriber(BaseTranscriber):
         return dict(row)
 
 
-class VideoFileTranscriber(BaseTranscriber):
-    def __init__(self, model_name: str = "base") -> None:
-        self.__model_name = model_name
-        self.__model = whisper.load_model(model_name)
+MAX_AUDIO_SECONDS = 60 * 30  # 30 minutes
 
-    @property
-    def model(self):
-        return self.__model
+_openai_client: OpenAI | None = None
+
+
+def _get_openai_client() -> OpenAI:
+    global _openai_client
+    if _openai_client is None:
+        _openai_client = OpenAI(api_key=settings.OPENAI_API_KEY)
+    return _openai_client
+
+
+class VideoFileTranscriber(BaseTranscriber):
+    def _call_whisper(self, audio_path: str):
+        client = _get_openai_client()
+        with open(audio_path, "rb") as f:
+            return client.audio.transcriptions.create(
+                file=(audio_path, f),
+                model="whisper-1",
+                response_format="verbose_json",
+                timestamp_granularities=["segment"],
+            )
 
     async def transcribe(
         self, source: str, db, user_video_id: str = None
     ) -> dict:
-        wav_path = await asyncio.to_thread(video_to_audio, source)
+        audio_path = await asyncio.to_thread(video_to_audio, source)
         try:
-            result = await asyncio.to_thread(self.__model.transcribe, wav_path)
-            full_text = result["text"]
+            result = await asyncio.to_thread(self._call_whisper, audio_path)
+            full_text = result.text
             segments = [
-                {"start": s["start"], "end": s["end"], "text": s["text"]}
-                for s in result["segments"]
+                {"start": s.start, "end": s.end, "text": s.text}
+                for s in (result.segments or [])
             ]
-            language = result["language"]
+            language = result.language or ""
 
             row = await db.fetchrow(
                 "INSERT INTO transcriptions "
@@ -157,11 +173,20 @@ class VideoFileTranscriber(BaseTranscriber):
                 full_text,
                 json.dumps(segments),
                 language,
-                f"whisper-{self.__model_name}",
+                "openai-whisper-1",
             )
         finally:
-            await asyncio.to_thread(delete_temporary_audio_file, wav_path)
+            await asyncio.to_thread(delete_temporary_audio_file, audio_path)
 
+        await _run_rag_pipeline(
+            db,
+            str(row["id"]),
+            MODEL_CONFIG.embedding_model,
+            MODEL_CONFIG.phase2_summary_model,
+        )
+        row = await db.fetchrow(
+            "SELECT * FROM transcriptions WHERE id = $1::uuid", row["id"]
+        )
         return dict(row)
 
 

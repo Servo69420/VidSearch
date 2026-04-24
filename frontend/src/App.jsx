@@ -25,6 +25,7 @@ import SubscriptionPage from './pages/dashboard/SubscriptionPage'
 import ProfilePage from './pages/dashboard/ProfilePage'
 import SettingsPage from './pages/dashboard/SettingsPage'
 import NotificationsPage from './pages/dashboard/NotificationsPage'
+import AdminPage from './pages/dashboard/AdminPage'
 
 // Legal pages
 import PrivacyPage from './pages/legal/PrivacyPage'
@@ -36,7 +37,7 @@ import ExplainPage from './ExplainPage'
 import './styles/variables.css'
 import './styles/global.css'
 
-const PROTECTED = ['/dashboard', '/watch', '/history', '/watched', '/saved', '/subscription', '/profile', '/settings', '/notifications']
+const PROTECTED = ['/dashboard', '/watch', '/history', '/watched', '/saved', '/subscription', '/profile', '/settings', '/notifications', '/admin']
 
 const ROUTES = [
   { path: '/', component: HomePage },
@@ -60,6 +61,7 @@ const ROUTES = [
   { path: '/profile', component: ProfilePage },
   { path: '/settings', component: SettingsPage },
   { path: '/notifications', component: NotificationsPage },
+  { path: '/admin', component: AdminPage },
   { path: '/privacy', component: PrivacyPage },
   { path: '/terms', component: TermsPage },
   { path: '/cookies', component: CookiePage },

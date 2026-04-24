@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS users (
     surname       TEXT DEFAULT '',
     avatar_url    TEXT DEFAULT '',
     subscription  TEXT DEFAULT 'free',
+    is_admin      BOOLEAN DEFAULT FALSE,
     created_at    TIMESTAMPTZ DEFAULT now()
 );
 

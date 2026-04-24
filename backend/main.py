@@ -17,14 +17,11 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from app.routers import chat
-from app.routers import files
+from app.routers import admin, chat, chat_history, files, frame_capture
 from app.database import connect, disconnect
 from app.routers import auth
 from app.routers import transcription
 from app.models.background_tasks import TokenCleanupTask
-from app.routers import chat_history
-from app.routers import frame_capture
 
 
 UPLOAD_DIR = Path(__file__).resolve().parent / "uploads"
@@ -71,3 +68,4 @@ app.include_router(
     transcription.router, prefix="/transcription", tags=["transcription"]
 )
 app.include_router(frame_capture.router, tags=["frame-capture"])
+app.include_router(admin.router, prefix="/admin", tags=["admin"])

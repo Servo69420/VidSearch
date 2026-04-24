@@ -32,6 +32,7 @@ export default function Navbar() {
     { label: 'Browse Videos', href: '#/browse' },
     { label: 'Dashboard', href: '#/dashboard' },
     { label: 'History', href: '#/history' },
+    ...(user?.is_admin ? [{ label: 'Statistics', href: '#/admin' }] : []),
   ]
 
   const links = user ? loggedInLinks : publicLinks

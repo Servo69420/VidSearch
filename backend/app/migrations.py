@@ -1,5 +1,7 @@
 import logging
 
+import bcrypt
+
 from app.embedder import DEFAULT_EMBEDDING_DIMENSIONS
 
 logger = logging.getLogger(__name__)
@@ -51,3 +53,24 @@ async def ensure_embedding_dimensions(db) -> None:
             WITH (lists = 100);
         """
     )
+
+
+async def ensure_admin_setup(db) -> None:
+    """Add is_admin column and create the default admin account."""
+    await db.execute(
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN DEFAULT FALSE"
+    )
+
+    exists = await db.fetchval("SELECT 1 FROM users WHERE username = 'admin'")
+    if not exists:
+        hashed = bcrypt.hashpw(b"admin", bcrypt.gensalt()).decode()
+        await db.execute(
+            "INSERT INTO users (username, password_hash, is_admin) "
+            "VALUES ('admin', $1, TRUE)",
+            hashed,
+        )
+        logger.info("Admin account created (username=admin, default password=admin)")
+    else:
+        await db.execute(
+            "UPDATE users SET is_admin = TRUE WHERE username = 'admin' AND is_admin = FALSE"
+        )

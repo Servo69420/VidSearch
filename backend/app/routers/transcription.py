@@ -1,3 +1,4 @@
+import asyncio
 import json
 import re
 
@@ -146,7 +147,7 @@ async def transcribe_upload(
     data = await file.read()
     filename = f"{uuid.uuid4().hex}_{file.filename}"
     file_path = UPLOAD_DIR / filename
-    file_path.write_bytes(data)
+    await asyncio.to_thread(file_path.write_bytes, data)
 
     user_video = await db.fetchrow(
         "INSERT INTO user_videos (user_id, file_name, file_path) "

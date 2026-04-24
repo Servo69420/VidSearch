@@ -41,7 +41,7 @@ async def me(
 ):
     row = await db.fetchrow(
         "SELECT u.id, u.username, u.email, u.name, u.surname, u.avatar_url, "
-        "u.subscription, u.created_at, "
+        "u.subscription, u.is_admin, u.created_at, "
         "COALESCE(array_agg(h.hobby) FILTER (WHERE h.hobby IS NOT NULL), '{}') AS hobbies "
         "FROM users u "
         "LEFT JOIN user_hobbies h ON h.user_id = u.id "
