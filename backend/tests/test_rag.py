@@ -11,6 +11,8 @@ class _FakeEmbedder:
 class _FakeDB:
     async def fetch(self, query, transcription_id, vector, top_k):
         _ = (query, transcription_id, vector, top_k)
+        if "level = 3" in query:
+            return []
         if "summary_embedding" in query:
             return [
                 {
@@ -194,6 +196,125 @@ class TestSectionGrouping(unittest.TestCase):
         )
 
         self.assertIn("raw 0", sections[0].text)
+
+
+class TestSectionFirstSearch(unittest.IsolatedAsyncioTestCase):
+    async def test_section_first_returns_leaves_when_sections_exist(self):
+        class _SectionFakeDB:
+            async def fetch(self, query, *args):
+                if "level = 3" in query:
+                    return [
+                        {
+                            "id": "sec-1",
+                            "idx": 0,
+                            "start_s": 0.0,
+                            "end_s": 120.0,
+                            "summary": "Section overview",
+                            "score": 0.88,
+                        }
+                    ]
+                if "level = 2" in query and "parent_chunk_id" in query:
+                    return [
+                        {
+                            "id": "top-1",
+                            "idx": 7,
+                            "start_s": 10.0,
+                            "end_s": 60.0,
+                            "summary": "Topic overview",
+                            "score": 0.90,
+                        }
+                    ]
+                if "level = 1" in query and "parent_chunk_id" in query:
+                    return [
+                        {
+                            "idx": 3,
+                            "start_s": 30.0,
+                            "end_s": 45.0,
+                            "text": "Exact leaf match",
+                            "score": 0.95,
+                        }
+                    ]
+                return []
+
+        pipeline = RAGPipeline(_SectionFakeDB(), embedder=_FakeEmbedder())
+        result = await pipeline.search(
+            "6f0dd8cc-f0d4-4aef-b42b-f8322abf3df0",
+            "what is this about",
+            top_k=2,
+        )
+
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0].idx, 3)
+        self.assertEqual(result[0].level, 1)
+        self.assertAlmostEqual(result[0].score, 0.95)
+        self.assertEqual(result[0].topic_summary, "Topic overview")
+
+    async def test_section_without_topics_falls_back_to_section_hit(self):
+        class _OrphanSectionFakeDB:
+            async def fetch(self, query, *args):
+                if "level = 3" in query:
+                    return [
+                        {
+                            "id": "sec-1",
+                            "idx": 5,
+                            "start_s": 100.0,
+                            "end_s": 200.0,
+                            "summary": "Stub section",
+                            "score": 0.70,
+                        }
+                    ]
+                return []
+
+        pipeline = RAGPipeline(_OrphanSectionFakeDB(), embedder=_FakeEmbedder())
+        result = await pipeline.search(
+            "6f0dd8cc-f0d4-4aef-b42b-f8322abf3df0",
+            "anything",
+            top_k=1,
+        )
+
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0].level, 3)
+        self.assertEqual(result[0].idx, 5)
+        self.assertEqual(result[0].text, "Stub section")
+
+    async def test_topic_without_leaves_falls_back_to_topic_hit(self):
+        class _OrphanTopicFakeDB:
+            async def fetch(self, query, *args):
+                if "level = 3" in query:
+                    return [
+                        {
+                            "id": "sec-1",
+                            "idx": 0,
+                            "start_s": 0.0,
+                            "end_s": 100.0,
+                            "summary": "Sec",
+                            "score": 0.80,
+                        }
+                    ]
+                if "level = 2" in query and "parent_chunk_id" in query:
+                    return [
+                        {
+                            "id": "top-1",
+                            "idx": 2,
+                            "start_s": 10.0,
+                            "end_s": 50.0,
+                            "summary": "Topic",
+                            "score": 0.85,
+                        }
+                    ]
+                return []
+
+        pipeline = RAGPipeline(_OrphanTopicFakeDB(), embedder=_FakeEmbedder())
+        result = await pipeline.search(
+            "6f0dd8cc-f0d4-4aef-b42b-f8322abf3df0",
+            "anything",
+            top_k=1,
+        )
+
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0].level, 2)
+        self.assertEqual(result[0].idx, 2)
+        self.assertEqual(result[0].topic_summary, "Topic")
 
 
 if __name__ == "__main__":

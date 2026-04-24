@@ -283,6 +283,20 @@ class RAGPipeline:
         query_vector = (await self._embedder.embed([query]))[0]
         query_vector_literal = str(query_vector)
 
+        section_hits = await self._search_section_first(
+            transcription_id,
+            query_vector_literal,
+            top_k,
+        )
+        if section_hits:
+            logger.info(
+                "RAG section-first search for %s returned %s chunks (top_k=%s)",
+                transcription_id,
+                len(section_hits),
+                top_k,
+            )
+            return section_hits[:top_k]
+
         topic_hits = await self._search_topic_first(
             transcription_id,
             query_vector_literal,
@@ -295,6 +309,115 @@ class RAGPipeline:
             top_k,
         )
         return topic_hits[:top_k]
+
+    async def _search_section_first(
+        self,
+        transcription_id: str,
+        query_vector_literal: str,
+        top_k: int,
+    ) -> list[RetrievedChunk]:
+        # Fan-out: section_limit × 2 topics × 2 leaves. ceil(top_k/4) keeps
+        # the candidate pool ≥ top_k while respecting the coarse-to-fine funnel.
+        section_limit = max(1, (top_k + 3) // 4)
+
+        section_rows = await self._db.fetch(
+            """SELECT id, idx, start_s, end_s, summary,
+                      (1 - (summary_embedding <=> $2::vector)) AS score
+               FROM transcript_chunks
+               WHERE transcription_id = $1::uuid
+                 AND level = 3
+                 AND summary_embedding IS NOT NULL
+               ORDER BY summary_embedding <=> $2::vector
+               LIMIT $3""",
+            transcription_id,
+            query_vector_literal,
+            section_limit,
+        )
+        if not section_rows:
+            return []
+
+        hits: list[RetrievedChunk] = []
+        for section in section_rows:
+            section_score = float(section["score"] or 0.0)
+            section_summary = section["summary"] or ""
+
+            topic_rows = await self._db.fetch(
+                """SELECT id, idx, start_s, end_s, summary,
+                          (1 - (summary_embedding <=> $3::vector)) AS score
+                   FROM transcript_chunks
+                   WHERE transcription_id = $1::uuid
+                     AND level = 2
+                     AND parent_chunk_id = $2::uuid
+                     AND summary_embedding IS NOT NULL
+                   ORDER BY summary_embedding <=> $3::vector
+                   LIMIT 2""",
+                transcription_id,
+                section["id"],
+                query_vector_literal,
+            )
+
+            if not topic_rows:
+                hits.append(
+                    RetrievedChunk(
+                        idx=section["idx"],
+                        level=3,
+                        start_s=section["start_s"],
+                        end_s=section["end_s"],
+                        text=section_summary,
+                        score=section_score,
+                        topic_summary=section_summary,
+                    )
+                )
+                continue
+
+            for topic in topic_rows:
+                topic_score = float(topic["score"] or section_score)
+                topic_summary = topic["summary"] or ""
+
+                leaf_rows = await self._db.fetch(
+                    """SELECT idx, start_s, end_s, text,
+                              (1 - (embedding <=> $3::vector)) AS score
+                       FROM transcript_chunks
+                       WHERE transcription_id = $1::uuid
+                         AND level = 1
+                         AND parent_chunk_id = $2::uuid
+                         AND embedding IS NOT NULL
+                       ORDER BY embedding <=> $3::vector
+                       LIMIT 2""",
+                    transcription_id,
+                    topic["id"],
+                    query_vector_literal,
+                )
+
+                if not leaf_rows:
+                    hits.append(
+                        RetrievedChunk(
+                            idx=topic["idx"],
+                            level=2,
+                            start_s=topic["start_s"],
+                            end_s=topic["end_s"],
+                            text=topic_summary,
+                            score=topic_score,
+                            topic_summary=topic_summary,
+                        )
+                    )
+                    continue
+
+                for leaf in leaf_rows:
+                    hits.append(
+                        RetrievedChunk(
+                            idx=leaf["idx"],
+                            level=1,
+                            start_s=leaf["start_s"],
+                            end_s=leaf["end_s"],
+                            text=leaf["text"],
+                            score=float(leaf["score"] or topic_score),
+                            topic_summary=topic_summary,
+                        )
+                    )
+
+        hits.sort(key=lambda item: item.score, reverse=True)
+        return hits
 
     async def _search_topic_first(
         self,
