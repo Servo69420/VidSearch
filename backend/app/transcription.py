@@ -3,8 +3,10 @@ import json
 import logging
 from abc import ABC, abstractmethod
 
-import whisper
+from groq import Groq
 from youtube_transcript_api import YouTubeTranscriptApi
+
+from app.config import settings
 
 from app.model_config import MODEL_CONFIG
 from app.embedder import OpenRouterEmbedder
@@ -127,27 +129,43 @@ class YouTubeTranscriber(BaseTranscriber):
         return dict(row)
 
 
-class VideoFileTranscriber(BaseTranscriber):
-    def __init__(self, model_name: str = "base") -> None:
-        self.__model_name = model_name
-        self.__model = whisper.load_model(model_name)
+MAX_AUDIO_SECONDS = 60 * 30  # 30 minutes
 
-    @property
-    def model(self):
-        return self.__model
+_groq_client: Groq | None = None
+
+
+def _get_groq_client() -> Groq:
+    global _groq_client
+    if _groq_client is None:
+        key = settings.GROQ_API_KEY
+        logger.warning("Creating Groq client with key: %s...%s (len=%d)", key[:8], key[-4:], len(key))
+        _groq_client = Groq(api_key=key)
+    return _groq_client
+
+
+class VideoFileTranscriber(BaseTranscriber):
+    def _call_groq(self, audio_path: str):
+        client = _get_groq_client()
+        with open(audio_path, "rb") as f:
+            return client.audio.transcriptions.create(
+                file=(audio_path, f.read()),
+                model="whisper-large-v3-turbo",
+                response_format="verbose_json",
+                timestamp_granularities=["segment"],
+            )
 
     async def transcribe(
         self, source: str, db, user_video_id: str = None
     ) -> dict:
-        wav_path = await asyncio.to_thread(video_to_audio, source)
+        audio_path = await asyncio.to_thread(video_to_audio, source)
         try:
-            result = await asyncio.to_thread(self.__model.transcribe, wav_path)
-            full_text = result["text"]
+            result = await asyncio.to_thread(self._call_groq, audio_path)
+            full_text = result.text
             segments = [
-                {"start": s["start"], "end": s["end"], "text": s["text"]}
-                for s in result["segments"]
+                {"start": s.start, "end": s.end, "text": s.text}
+                for s in (result.segments or [])
             ]
-            language = result["language"]
+            language = result.language or ""
 
             row = await db.fetchrow(
                 "INSERT INTO transcriptions "
@@ -157,10 +175,10 @@ class VideoFileTranscriber(BaseTranscriber):
                 full_text,
                 json.dumps(segments),
                 language,
-                f"whisper-{self.__model_name}",
+                "groq-whisper-large-v3-turbo",
             )
         finally:
-            await asyncio.to_thread(delete_temporary_audio_file, wav_path)
+            await asyncio.to_thread(delete_temporary_audio_file, audio_path)
 
         return dict(row)
 

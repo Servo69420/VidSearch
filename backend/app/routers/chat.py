@@ -127,12 +127,18 @@ _TOOLCALL_JSON_RE = re.compile(
     r"""\.?\s*\[?\s*\{\s*["']tool_call_id["'][\s\S]*?(?:\}\s*\]|\}|$)""",
 )
 
+# Gemma-style inline tool call tokens: <|tool_call>...<tool_call|>
+_GEMMA_TOOLCALL_RE = re.compile(
+    r"<\|tool_call\>.*?<tool_call\|>", re.DOTALL
+)
+
 
 def _strip_tool_call_literals(text: str) -> str:
     if not text:
         return text
     cleaned = _TOOLCALL_LITERAL_RE.sub("", text)
     cleaned = _TOOLCALL_JSON_RE.sub("", cleaned)
+    cleaned = _GEMMA_TOOLCALL_RE.sub("", cleaned)
     return cleaned.strip()
 
 

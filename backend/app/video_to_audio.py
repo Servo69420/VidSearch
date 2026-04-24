@@ -5,6 +5,11 @@ from abc import ABC, abstractmethod
 import ffmpeg
 
 
+def _ffmpeg_cmd() -> str:
+    from app.config import settings
+    return settings.FFMPEG_PATH or "ffmpeg"
+
+
 class BaseAudioExtractor(ABC):
     @abstractmethod
     def extract(self, video_path: str) -> str:
@@ -29,15 +34,21 @@ class FFmpegAudioExtractor(BaseAudioExtractor):
         return self.__channels
 
     def extract(self, video_path: str) -> str:
+        if not os.path.exists(video_path):
+            raise FileNotFoundError(f"Video not found: {video_path}")
         tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
         tmp.close()
-        (
-            ffmpeg
-            .input(video_path)
-            .output(tmp.name, ac=self.__channels, ar=self.__sample_rate, format="wav")
-            .overwrite_output()
-            .run(quiet=True)
-        )
+        try:
+            (
+                ffmpeg
+                .input(video_path)
+                .output(tmp.name, ac=self.__channels, ar=self.__sample_rate, format="wav")
+                .overwrite_output()
+                .run(cmd=_ffmpeg_cmd(), capture_stdout=True, capture_stderr=True)
+            )
+        except ffmpeg.Error as e:
+            stderr = e.stderr.decode(errors='replace') if e.stderr else "(empty)"
+            raise RuntimeError(f"FFmpeg failed: {stderr}") from e
         return tmp.name
 
     def cleanup(self, audio_path: str) -> None:

@@ -632,12 +632,13 @@
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  font-size: 15px;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: border-color var(--ease), background var(--ease), box-shadow var(--ease);
+  padding: 0;
+  color: var(--text-secondary);
+  transition: border-color var(--ease), background var(--ease), box-shadow var(--ease), color var(--ease);
 }
 
 .watch-capture-toggle:hover {
@@ -648,6 +649,7 @@
   background: var(--navy);
   border-color: var(--navy);
   box-shadow: 0 0 0 3px rgba(30, 58, 138, 0.18);
+  color: white;
 }
 
 .watch-capture-toggle:disabled {
