@@ -609,6 +609,7 @@ export default function WatchPage({ params }) {
     const updatedMessages = [...messages, userMessage]
     setMessages(updatedMessages)
     setChatInput('')
+    if (inputRef.current) inputRef.current.style.height = 'auto'
     setIsLoading(true)
     recordChat(uploadedVideoId || videoId)
 
