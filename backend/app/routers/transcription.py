@@ -13,7 +13,6 @@ from app.database import get_db
 from app.dependencies import get_current_user
 from app.model_config import MODEL_CONFIG
 from app.routers.context import get_transcript
-from app.routers.chat import EMBEDDING_MODEL
 from app.transcription import transcribe_video_yt, transcribe_uploaded_video
 from app.youtube import extract_video_id
 

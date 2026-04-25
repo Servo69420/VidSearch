@@ -1,10 +1,11 @@
-"""Admin router — statistics and CSV export endpoints."""
+"""Admin router — statistics, CSV export, and TXT batch-import endpoints."""
 
 import csv
 import io
+from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from fastapi.responses import StreamingResponse
 
 from app.database import get_db
@@ -12,6 +13,138 @@ from app.dependencies import get_current_user
 
 router = APIRouter()
 
+
+# ---------------------------------------------------------------------------
+# OOP — abstract base + concrete CSV exporters
+# ---------------------------------------------------------------------------
+
+class BaseCSVExporter(ABC):
+    """Abstract exporter that writes rows to CSV format.
+
+    Subclasses define the column headers and how each DB row maps to a CSV row.
+    """
+
+    @property
+    @abstractmethod
+    def fieldnames(self) -> list[str]:
+        """Column headers for the CSV file."""
+
+    @abstractmethod
+    def row(self, record) -> list:
+        """Convert a single DB record to a list of CSV cell values."""
+
+    def export(self, records) -> str:
+        """Return a CSV string for *records*."""
+        buf = io.StringIO()
+        writer = csv.writer(buf)
+        writer.writerow(self.fieldnames)
+        for record in records:
+            writer.writerow(self.row(record))
+        return buf.getvalue()
+
+    def filename(self, prefix: str) -> str:
+        ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        return f"{prefix}_{ts}.csv"
+
+
+class StatsExporter(BaseCSVExporter):
+    """Exports per-user statistics."""
+
+    @property
+    def fieldnames(self) -> list[str]:
+        return [
+            "username", "email", "joined_at", "subscription",
+            "transcriptions", "uploaded_videos", "chat_messages",
+            "est_transcription_minutes", "est_transcription_cost_usd",
+        ]
+
+    def row(self, r) -> list:
+        est_min = round((r["total_chars"] / 5) / 130, 2)
+        est_cost = round(est_min * 0.006, 4)
+        return [
+            r["username"],
+            r["email"] or "",
+            r["created_at"].isoformat() if r["created_at"] else "",
+            r["subscription"] or "free",
+            r["transcriptions"],
+            r["uploaded_videos"],
+            r["chat_messages"],
+            est_min,
+            est_cost,
+        ]
+
+
+class TranscriptionsExporter(BaseCSVExporter):
+    """Exports transcription metadata."""
+
+    @property
+    def fieldnames(self) -> list[str]:
+        return [
+            "title", "source_type", "source_url", "language", "status",
+            "model_version", "created_at", "word_count", "est_minutes", "username",
+        ]
+
+    def row(self, r) -> list:
+        word_count = r["char_count"] // 5
+        est_min = round(word_count / 130, 2)
+        return [
+            r["title"],
+            r["source_type"],
+            r["source_url"],
+            r["language"] or "",
+            r["status"],
+            r["model_version"] or "",
+            r["created_at"].isoformat() if r["created_at"] else "",
+            word_count,
+            est_min,
+            r["username"] or "",
+        ]
+
+
+class VideosExporter(BaseCSVExporter):
+    """Exports video catalogue (YouTube + uploaded)."""
+
+    @property
+    def fieldnames(self) -> list[str]:
+        return [
+            "title", "source_type", "source_url", "created_at",
+            "transcription_status", "language", "uploaded_by",
+        ]
+
+    def row(self, r) -> list:
+        return [
+            r["title"] or "",
+            r["source_type"],
+            r["source_url"] or "",
+            r["created_at"].isoformat() if r["created_at"] else "",
+            r["transcription_status"] or "none",
+            r["language"] or "",
+            r.get("username") or "",
+        ]
+
+
+# ---------------------------------------------------------------------------
+# OOP — TXT batch URL importer
+# ---------------------------------------------------------------------------
+
+class TXTURLImporter:
+    """Parses a plain-text file of YouTube URLs — one URL per line.
+
+    Lines starting with '#' and blank lines are ignored.
+    """
+
+    def parse(self, content: str) -> list[str]:
+        urls = []
+        for line in content.splitlines():
+            stripped = line.strip()
+            if stripped and not stripped.startswith("#"):
+                urls.append(stripped)
+        return urls
+
+
+# ---------------------------------------------------------------------------
+# Auth helper
+# ---------------------------------------------------------------------------
 
 async def require_admin(
     current_user=Depends(get_current_user),
@@ -25,6 +158,10 @@ async def require_admin(
         raise HTTPException(status_code=403, detail="Admin access required.")
     return current_user
 
+
+# ---------------------------------------------------------------------------
+# Stats endpoint
+# ---------------------------------------------------------------------------
 
 @router.get("/stats")
 async def get_stats(_admin=Depends(require_admin), db=Depends(get_db)):
@@ -102,6 +239,10 @@ async def get_stats(_admin=Depends(require_admin), db=Depends(get_db)):
     }
 
 
+# ---------------------------------------------------------------------------
+# CSV export endpoints
+# ---------------------------------------------------------------------------
+
 @router.get("/stats/export.csv")
 async def export_stats_csv(_admin=Depends(require_admin), db=Depends(get_db)):
     rows = await db.fetch(
@@ -111,14 +252,12 @@ async def export_stats_csv(_admin=Depends(require_admin), db=Depends(get_db)):
             u.email,
             u.created_at,
             u.subscription,
-            -- upload transcriptions (owned by this user)
             (
                 SELECT COUNT(DISTINCT t.id)
                 FROM user_videos uv
                 JOIN transcriptions t ON t.user_video_id = uv.id
                 WHERE uv.user_id = u.id
             ) +
-            -- YouTube transcriptions this user has chatted about
             (
                 SELECT COUNT(DISTINCT t.id)
                 FROM chat_history ch
@@ -127,7 +266,6 @@ async def export_stats_csv(_admin=Depends(require_admin), db=Depends(get_db)):
             ) AS transcriptions,
             (SELECT COUNT(*) FROM user_videos WHERE user_id = u.id) AS uploaded_videos,
             (SELECT COUNT(*) FROM chat_history WHERE user_id = u.id) AS chat_messages,
-            -- cost estimate: only uploaded transcripts are "owned" costs
             COALESCE((
                 SELECT SUM(length(t.full_text))
                 FROM user_videos uv
@@ -138,36 +276,12 @@ async def export_stats_csv(_admin=Depends(require_admin), db=Depends(get_db)):
         ORDER BY u.created_at
         """
     )
-
-    output = io.StringIO()
-    writer = csv.writer(output)
-    writer.writerow([
-        "username", "email", "joined_at", "subscription",
-        "transcriptions", "uploaded_videos", "chat_messages",
-        "est_transcription_minutes", "est_transcription_cost_usd",
-    ])
-    for r in rows:
-        est_min = round((r["total_chars"] / 5) / 130, 2)
-        est_cost = round(est_min * 0.006, 4)
-        writer.writerow([
-            r["username"],
-            r["email"] or "",
-            r["created_at"].isoformat() if r["created_at"] else "",
-            r["subscription"] or "free",
-            r["transcriptions"],
-            r["uploaded_videos"],
-            r["chat_messages"],
-            est_min,
-            est_cost,
-        ])
-
-    output.seek(0)
-    ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-    filename = f"vidsearch_stats_{ts}.csv"
+    exporter = StatsExporter()
+    content = exporter.export(rows)
     return StreamingResponse(
-        iter([output.getvalue()]),
+        iter([content]),
         media_type="text/csv",
-        headers={"Content-Disposition": f"attachment; filename={filename}"},
+        headers={"Content-Disposition": f"attachment; filename={exporter.filename('vidsearch_stats')}"},
     )
 
 
@@ -192,36 +306,12 @@ async def export_transcriptions_csv(_admin=Depends(require_admin), db=Depends(ge
         ORDER BY t.created_at
         """
     )
-
-    output = io.StringIO()
-    writer = csv.writer(output)
-    writer.writerow([
-        "title", "source_type", "source_url", "language", "status",
-        "model_version", "created_at", "word_count", "est_minutes", "username",
-    ])
-    for r in rows:
-        word_count = r["char_count"] // 5
-        est_min = round(word_count / 130, 2)
-        writer.writerow([
-            r["title"],
-            r["source_type"],
-            r["source_url"],
-            r["language"] or "",
-            r["status"],
-            r["model_version"] or "",
-            r["created_at"].isoformat() if r["created_at"] else "",
-            word_count,
-            est_min,
-            r["username"] or "",
-        ])
-
-    output.seek(0)
-    ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-    filename = f"vidsearch_transcriptions_{ts}.csv"
+    exporter = TranscriptionsExporter()
+    content = exporter.export(rows)
     return StreamingResponse(
-        iter([output.getvalue()]),
+        iter([content]),
         media_type="text/csv",
-        headers={"Content-Disposition": f"attachment; filename={filename}"},
+        headers={"Content-Disposition": f"attachment; filename={exporter.filename('vidsearch_transcriptions')}"},
     )
 
 
@@ -257,39 +347,38 @@ async def export_videos_csv(_admin=Depends(require_admin), db=Depends(get_db)):
         ORDER BY uv.created_at
         """
     )
-
-    output = io.StringIO()
-    writer = csv.writer(output)
-    writer.writerow([
-        "title", "source_type", "source_url", "created_at",
-        "transcription_status", "language", "uploaded_by",
-    ])
-    for r in yt_rows:
-        writer.writerow([
-            r["title"] or "",
-            r["source_type"],
-            r["source_url"] or "",
-            r["created_at"].isoformat() if r["created_at"] else "",
-            r["transcription_status"] or "none",
-            r["language"] or "",
-            "",
-        ])
-    for r in upload_rows:
-        writer.writerow([
-            r["title"] or "",
-            r["source_type"],
-            r["source_url"],
-            r["created_at"].isoformat() if r["created_at"] else "",
-            r["transcription_status"] or "none",
-            r["language"] or "",
-            r["username"] or "",
-        ])
-
-    output.seek(0)
-    ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-    filename = f"vidsearch_videos_{ts}.csv"
+    exporter = VideosExporter()
+    content = exporter.export(list(yt_rows) + list(upload_rows))
     return StreamingResponse(
-        iter([output.getvalue()]),
+        iter([content]),
         media_type="text/csv",
-        headers={"Content-Disposition": f"attachment; filename={filename}"},
+        headers={"Content-Disposition": f"attachment; filename={exporter.filename('vidsearch_videos')}"},
     )
+
+
+# ---------------------------------------------------------------------------
+# TXT batch URL import endpoint
+# ---------------------------------------------------------------------------
+
+@router.post("/urls/import")
+async def import_urls_txt(
+    _admin=Depends(require_admin),
+    file: UploadFile = File(...),
+):
+    """Accept a plain-text file of YouTube URLs (one per line) and return the parsed list."""
+    if not file.filename or not file.filename.endswith(".txt"):
+        raise HTTPException(status_code=400, detail="Only .txt files are accepted.")
+
+    raw = await file.read()
+    try:
+        content = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        raise HTTPException(status_code=400, detail="File must be UTF-8 encoded.")
+
+    importer = TXTURLImporter()
+    urls = importer.parse(content)
+
+    if not urls:
+        raise HTTPException(status_code=422, detail="No valid URLs found in the file.")
+
+    return {"imported": len(urls), "urls": urls}

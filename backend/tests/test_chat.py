@@ -87,7 +87,7 @@ class TestRunChatLoop(unittest.IsolatedAsyncioTestCase):
     async def test_round2_failure_keeps_round1_content(self):
         tool_calls = [_tc("c1", "mute_video")]
 
-        async def _side_effect(messages, tool_choice="auto"):
+        async def _side_effect(messages, tool_choice="auto", model=None):
             if tool_choice == "none":
                 raise HTTPException(status_code=502, detail="x")
             return _oai("Muting the video.", tool_calls)
@@ -100,7 +100,7 @@ class TestRunChatLoop(unittest.IsolatedAsyncioTestCase):
     async def test_round2_timeout_keeps_round1_content(self):
         tool_calls = [_tc("c1", "play_video")]
 
-        async def _side_effect(messages, tool_choice="auto"):
+        async def _side_effect(messages, tool_choice="auto", model=None):
             if tool_choice == "none":
                 raise httpx.TimeoutException("timeout")
             return _oai("Starting playback.", tool_calls)
@@ -147,31 +147,28 @@ class TestRunChatLoop(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(tc, round1_calls)
 
 
-class TestBuildToolResultTurns(unittest.TestCase):
-    def test_builds_assistant_then_one_tool_turn_per_call(self):
+class TestBuildFollowupTurns(unittest.TestCase):
+    def test_returns_two_turns(self):
         tool_calls = [_tc("a", "seek_video"), _tc("b", "play_video")]
-        turns = chat_module._build_tool_result_turns(tool_calls, "hello")
-        self.assertEqual(len(turns), 3)
+        turns = chat_module._build_followup_turns(tool_calls, "hello")
+        self.assertEqual(len(turns), 2)
+
+    def test_first_turn_is_assistant(self):
+        turns = chat_module._build_followup_turns([_tc("a", "seek_video")], "hi")
         self.assertEqual(turns[0]["role"], "assistant")
-        self.assertEqual(turns[0]["content"], "hello")
-        self.assertEqual(turns[0]["tool_calls"], tool_calls)
-        self.assertEqual(turns[1]["role"], "tool")
-        self.assertEqual(turns[1]["tool_call_id"], "a")
-        self.assertEqual(turns[2]["tool_call_id"], "b")
 
-    def test_tool_result_content_is_json_dispatched_stub(self):
-        turns = chat_module._build_tool_result_turns([_tc("x", "play_video")], "")
-        self.assertIn("dispatched", turns[1]["content"])
+    def test_second_turn_is_user(self):
+        turns = chat_module._build_followup_turns([_tc("a", "seek_video")], "hi")
+        self.assertEqual(turns[1]["role"], "user")
 
-    def test_assistant_content_is_null_when_round1_content_empty(self):
-        turns = chat_module._build_tool_result_turns([_tc("x", "play_video")], "")
-        self.assertIsNone(turns[0]["content"])
-
-    def test_assistant_content_preserved_when_round1_text_present(self):
-        turns = chat_module._build_tool_result_turns(
-            [_tc("x", "play_video")], "preamble"
-        )
+    def test_round1_content_preserved_in_assistant_turn(self):
+        turns = chat_module._build_followup_turns([_tc("a", "seek_video")], "preamble")
         self.assertEqual(turns[0]["content"], "preamble")
+
+    def test_empty_round1_content_gets_default_message(self):
+        turns = chat_module._build_followup_turns([_tc("a", "play_video")], "")
+        self.assertIsNotNone(turns[0]["content"])
+        self.assertGreater(len(turns[0]["content"]), 0)
 
 
 class TestStripToolCallLiterals(unittest.TestCase):

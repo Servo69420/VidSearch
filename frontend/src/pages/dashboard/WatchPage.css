@@ -660,6 +660,94 @@
   cursor: not-allowed;
 }
 
+/* Attachment options row */
+.watch-attach-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+  animation: attachFadeIn 0.15s ease;
+}
+
+@keyframes attachFadeIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.watch-attach-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-size: var(--text-sm);
+  font-family: inherit;
+  cursor: pointer;
+  transition: border-color var(--ease), background var(--ease);
+}
+
+.watch-attach-btn:hover {
+  border-color: var(--navy);
+}
+
+.watch-attach-btn.active {
+  background: var(--navy);
+  border-color: var(--navy);
+  color: white;
+}
+
+.watch-attach-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Attachment chips */
+.watch-attach-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.watch-attach-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  background: var(--navy-50);
+  border: 1px solid var(--navy-200);
+  border-radius: 20px;
+  font-size: 12px;
+  color: var(--text);
+}
+
+.watch-attach-chip-label {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.watch-attach-chip-remove {
+  background: none;
+  border: none;
+  padding: 0;
+  margin-left: 2px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 11px;
+  line-height: 1;
+  opacity: 0.6;
+  flex-shrink: 0;
+}
+
+.watch-attach-chip-remove:hover {
+  opacity: 1;
+}
+
 /* Theater mode */
 @keyframes theaterEnter {
   from {

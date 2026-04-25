@@ -20,7 +20,7 @@ class TestModelConfig(unittest.TestCase):
             module = importlib.reload(module)
 
         cfg = module.MODEL_CONFIG
-        self.assertEqual(cfg.phase3_summary_model, "google/gemini-2.5-flash-lite")
+        self.assertEqual(cfg.phase3_summary_model, "google/gemini-2.5-flash-lite:nitro")
         self.assertEqual(cfg.phase3_section_min_topic_chunks, 2)
         self.assertEqual(cfg.phase3_section_max_topic_chunks, 4)
         self.assertEqual(cfg.phase3_section_break_similarity, 0.68)

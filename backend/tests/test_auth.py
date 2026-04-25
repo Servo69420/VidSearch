@@ -4,7 +4,6 @@ Run:  python -m unittest tests.test_auth -v
 """
 
 import unittest
-from datetime import datetime, timedelta, timezone
 
 from fastapi import HTTPException
 

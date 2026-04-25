@@ -126,7 +126,7 @@ class FixedWindowChunker(ChunkingStrategy):
     def chunk(self, segments: list[Segment]) -> list[Chunk]:
         chunks: list[Chunk] = []
         for i in range(0, len(segments), self._window):
-            batch = segments[i : i + self._window]
+            batch = segments[i:i + self._window]
             chunks.append(
                 Chunk(
                     idx=len(chunks),
@@ -594,7 +594,7 @@ class RAGPipeline:
     ) -> list[Chunk]:
         topics: list[Chunk] = []
         for idx, (start_leaf_idx, end_leaf_idx) in enumerate(topic_ranges):
-            batch = leaves[start_leaf_idx : end_leaf_idx + 1]
+            batch = leaves[start_leaf_idx:end_leaf_idx + 1]
             topics.append(
                 Chunk(
                     idx=idx,
@@ -698,7 +698,7 @@ class RAGPipeline:
     ) -> list[Chunk]:
         sections: list[Chunk] = []
         for idx, (start_idx, end_idx) in enumerate(section_ranges):
-            topic_range = topic_chunks[start_idx : end_idx + 1]
+            topic_range = topic_chunks[start_idx:end_idx + 1]
             summary_texts: list[str] = []
             for t_idx in range(start_idx, end_idx + 1):
                 summary = processed_topics[t_idx].summary
@@ -765,7 +765,7 @@ class RAGPipeline:
     async def _embed_texts(self, texts: list[str]) -> list[list[float]]:
         vectors: list[list[float]] = []
         for i in range(0, len(texts), self._embed_batch_size):
-            batch = texts[i : i + self._embed_batch_size]
+            batch = texts[i:i + self._embed_batch_size]
             vectors.extend(await self._embedder.embed(batch))
         return vectors
 

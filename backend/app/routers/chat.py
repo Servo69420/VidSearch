@@ -41,7 +41,8 @@ SYSTEM_PROMPT = (
     "Format any mathematical notation using LaTeX inside `$...$` for inline "
     "math (e.g. `$x^3$`, `$\\int_0^{10} f(x)\\,dx$`) and `$$...$$` for "
     "display math, so the UI renders proper superscripts and symbols. "
-    "The end user might also attach an image of the current video scene using a trigger button, incorparate it in your answer if relevant and if you understand the image content. "
+    "The end user might also attach an image of the current video scene using a trigger button, "
+    "incorporate it in your answer if relevant and if you understand the image content. "
 )
 
 
@@ -54,6 +55,7 @@ class Chatrequest(BaseModel):
     message: list[dict]
     frame_base64: str | None = None
     current_time_s: float | None = None
+    txt_context: str | None = None
 
 
 def is_uuid(val: str) -> bool:
@@ -365,6 +367,12 @@ async def ask(
                 "content": _grounding_message(retrieved_chunks),
             }
         )
+
+    if request.txt_context:
+        openai_messages.append({
+            "role": "system",
+            "content": f"Additional context provided by the user:\n\n{request.txt_context}",
+        })
 
     valid_msgs = [
         msg for msg in request.message

@@ -6,10 +6,10 @@ from pathlib import Path
 backend_dir = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(backend_dir))
 
-from dotenv import load_dotenv
+from dotenv import load_dotenv  # noqa: E402
 load_dotenv(backend_dir / ".env")
 
-from app.config import settings
+from app.config import settings  # noqa: E402
 
 
 def test_groq_api_key():
@@ -46,7 +46,7 @@ def test_groq_audio_access():
     if r.status_code == 200:
         print("[OK] Audio transcription — account has Whisper access")
     elif r.status_code == 401:
-        print(f"[FAIL] Audio API rejected the key — account may need phone/billing verification")
+        print("[FAIL] Audio API rejected the key — account may need phone/billing verification")
         print(f"       Response: {r.text}")
     else:
         print(f"[INFO] Audio API returned HTTP {r.status_code}: {r.text}")

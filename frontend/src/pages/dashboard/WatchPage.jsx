@@ -62,7 +62,7 @@ async function loadHistoryFromAPI(videoId) {
   return rows.map(r => ({ role: r.role, text: r.content }))
 }
 
-async function sendMessageToAPI(videoId, messages, frameBase64, currentTimeS) {
+async function sendMessageToAPI(videoId, messages, frameBase64, currentTimeS, txtContext) {
   const res = await fetch(`${API_BASE}/chat/ask`, {
     method: 'POST',
     headers: {
@@ -76,6 +76,7 @@ async function sendMessageToAPI(videoId, messages, frameBase64, currentTimeS) {
         .map(m => ({ role: m.role, content: m.text })),
       ...(frameBase64 ? { frame_base64: frameBase64 } : {}),
       ...(currentTimeS != null ? { current_time_s: currentTimeS } : {}),
+      ...(txtContext ? { txt_context: txtContext } : {}),
     }),
   })
   if (!res.ok) {
@@ -236,11 +237,14 @@ export default function WatchPage({ params }) {
   const [theaterMode, setTheaterMode] = useState(false)
   const [theaterExiting, setTheaterExiting] = useState(false)
   const [frameCaptureArmed, setFrameCaptureArmed] = useState(false)
+  const [attachMenuOpen, setAttachMenuOpen] = useState(false)
+  const [importedTxt, setImportedTxt] = useState(null)
 
   const messagesEndRef = useRef(null)
   const messagesContainerRef = useRef(null)
   const inputRef = useRef(null)
   const fileInputRef = useRef(null)
+  const txtInputRef = useRef(null)
   const transcriptionStartedRef = useRef(new Set())
 
   const activeVideoId = uploadedVideoId || videoId
@@ -603,7 +607,11 @@ export default function WatchPage({ params }) {
     if (!text || chatDisabled) return
 
     const shouldCapture = frameCaptureArmed && videoId && !localVideoUrl
+    const txtContext = importedTxt?.content || null
+
     setFrameCaptureArmed(false)
+    setImportedTxt(null)
+    setAttachMenuOpen(false)
 
     const userMessage = { role: 'user', text }
     const updatedMessages = [...messages, userMessage]
@@ -620,7 +628,7 @@ export default function WatchPage({ params }) {
       : (ytReadyRef.current ? (ytPlayerRef.current?.getCurrentTime() ?? null) : null)
 
     try {
-      const { text, toolCalls } = await sendMessageToAPI(uploadedVideoId || videoId, updatedMessages, frameBase64, currentTimeS)
+      const { text, toolCalls } = await sendMessageToAPI(uploadedVideoId || videoId, updatedMessages, frameBase64, currentTimeS, txtContext)
 
       // Execute any tool calls (play/pause)
       if (toolCalls.length > 0) {
@@ -689,6 +697,18 @@ export default function WatchPage({ params }) {
 
   function handleUploadClick() {
     fileInputRef.current?.click()
+  }
+
+  function handleTxtFileChange(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = (ev) => {
+      setImportedTxt({ name: file.name, content: ev.target.result })
+      setAttachMenuOpen(false)
+    }
+    reader.readAsText(file)
+    e.target.value = ''
   }
 
   async function captureCurrentFrame() {
@@ -909,20 +929,22 @@ export default function WatchPage({ params }) {
         <div className="watch-chat-input-area">
           <div className="watch-chat-notice">{transcriptionNotice}</div>
           <div className="watch-chat-input-row">
-            {videoId && !localVideoUrl && (
-              <button
-                className={`watch-capture-toggle${frameCaptureArmed ? ' armed' : ''}`}
-                onClick={() => setFrameCaptureArmed(v => !v)}
-                title={frameCaptureArmed ? 'Frame capture armed — will capture on send' : 'Capture current frame with your next message'}
-                disabled={!isTranscriptionReady}
-              >
-                <svg width="17" height="17" viewBox="0 0 24 24" fill="none"
-                  stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
-                  <circle cx="12" cy="13" r="4"/>
+            <button
+              className={`watch-capture-toggle${attachMenuOpen ? ' armed' : ''}`}
+              onClick={() => setAttachMenuOpen(v => !v)}
+              title="Add attachment"
+              disabled={!isTranscriptionReady}
+            >
+              {attachMenuOpen ? (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                  <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
                 </svg>
-              </button>
-            )}
+              ) : (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                  <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+                </svg>
+              )}
+            </button>
             <textarea
               ref={inputRef}
               className="watch-chat-input"
@@ -947,6 +969,71 @@ export default function WatchPage({ params }) {
               disabled={!chatInput.trim() || chatDisabled}
             >&#8593;</button>
           </div>
+
+          {attachMenuOpen && (
+            <div className="watch-attach-options">
+              {videoId && !localVideoUrl && (
+                <button
+                  className={`watch-attach-btn${frameCaptureArmed ? ' active' : ''}`}
+                  onClick={() => { setFrameCaptureArmed(v => !v); setAttachMenuOpen(false) }}
+                  disabled={!isTranscriptionReady}
+                >
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+                    <circle cx="12" cy="13" r="4"/>
+                  </svg>
+                  Capture Frame
+                </button>
+              )}
+              <button
+                className="watch-attach-btn"
+                onClick={() => txtInputRef.current?.click()}
+                disabled={!isTranscriptionReady}
+              >
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                  <polyline points="14 2 14 8 20 8"/>
+                  <line x1="16" y1="13" x2="8" y2="13"/>
+                  <line x1="16" y1="17" x2="8" y2="17"/>
+                  <polyline points="10 9 9 9 8 9"/>
+                </svg>
+                Import .txt
+              </button>
+            </div>
+          )}
+
+          {(frameCaptureArmed || importedTxt) && (
+            <div className="watch-attach-chips">
+              {frameCaptureArmed && (
+                <span className="watch-attach-chip">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+                    <circle cx="12" cy="13" r="4"/>
+                  </svg>
+                  <span className="watch-attach-chip-label">Frame capture</span>
+                  <button className="watch-attach-chip-remove" onClick={() => setFrameCaptureArmed(false)}>✕</button>
+                </span>
+              )}
+              {importedTxt && (
+                <span className="watch-attach-chip">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                    <polyline points="14 2 14 8 20 8"/>
+                  </svg>
+                  <span className="watch-attach-chip-label">{importedTxt.name}</span>
+                  <button className="watch-attach-chip-remove" onClick={() => setImportedTxt(null)}>✕</button>
+                </span>
+              )}
+            </div>
+          )}
+
+          <input
+            type="file"
+            ref={txtInputRef}
+            accept=".txt"
+            style={{ display: 'none' }}
+            onChange={handleTxtFileChange}
+          />
         </div>
         </div>
       </div>
