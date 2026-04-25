@@ -633,25 +633,52 @@ Additional style conventions followed throughout the codebase:
 
 - **Integrating vector search required extending the standard PostgreSQL setup.** The `pgvector` extension must be installed alongside the database, and embedding dimensions (1024 by default) must be consistent between insertion and retrieval. This added operational complexity beyond a typical web application.
 
+## 3. Results
+
+- **All seven functional code requirements were implemented.** The application is fully working: users can register, upload or link videos, receive transcriptions, and chat with an AI about the video content using RAG-based context retrieval.
+
+- **OOP is applied meaningfully, not artificially.** Each OOP mechanism solves a real design problem: encapsulation protects user state from mutation; the Factory Method eliminates `if/else` branching in the router; the CSV exporter hierarchy allows three different export formats to share the same writing algorithm.
+
+- **The test suite is self-contained.** Heavy external dependencies (OpenAI Whisper, the OpenRouter API) are mocked at the module level, so all 60+ tests run without network access or GPU hardware.
+
+- **The main challenge was asynchronous architecture.** FastAPI's `async`/`await` model is not directly compatible with Python's synchronous `unittest`. Tests that exercise async logic use `unittest.IsolatedAsyncioTestCase` and `asyncio.run()`, while blocking I/O (Whisper inference, FFmpeg) is offloaded using `asyncio.to_thread()` to avoid blocking the event loop.
+
+- **Integrating vector search required extending the standard PostgreSQL setup.** The `pgvector` extension must be installed alongside the database, and embedding dimensions (1024 by default) must be consistent between insertion and retrieval. This added operational complexity beyond a typical web application.
+
+- **Working in one repository as a team was both challenging and interesting.** We used GitHub issues to organize tasks and worked mainly with two branches: `main` and `production`. During development, we also created an extra branch for changing how uploaded video transcription is handled. The original implementation used local Whisper, but we wanted to move it to OpenAI Whisper. Before that, we tried to implement Grok Whisper, but it did not work correctly. At the same time, new changes were being added to the `production` branch from another team member, so my unfinished Grok implementation could not be safely merged. To avoid breaking the working version, I created a separate branch for that experiment. This made the workflow cleaner because the experimental code stayed isolated until it was fixed and ready to merge back into `production`.
+
+- **The project also required managing several external tools and APIs.** Besides the core Python application, we worked with multiple APIs and external services, including AI transcription and chat-related integrations. To keep the development environment more stable, we used Conda to manage the Python environment and installed libraries in a consistent way across the project. We also experimented with visual documentation: using the Markdown Preview Mermaid Support extension in Visual Studio Code, we created flow diagrams and table-style visualizations to better understand how data moves through the application. This helped us document the system more clearly and made the architecture easier to discuss inside the team.
+
 ---
 
 ## 4. Conclusions
 
 VidSearch demonstrates that all four OOP pillars can be applied naturally in a real-world Python web application. Encapsulation keeps domain models safe from external mutation; abstraction defines clean contracts that isolate the chat router from transcription implementation details; inheritance shares common behaviour across multiple exporter and task classes; and polymorphism allows a single code path to handle YouTube videos and uploaded files identically.
 
-The Factory Method pattern proved particularly valuable: as transcription sources may expand in the future (e.g., podcast RSS feeds, direct audio URLs), only `TranscriberFactory.create()` needs to change — no router code is touched.
+The Factory Method pattern proved particularly valuable: as transcription sources may expand in the future, only `TranscriberFactory.create()` needs to change — no router code is touched. This made the application easier to extend and helped keep the router cleaner.
+
+The project also showed that building an AI-based application is not only about writing Python code. A large part of the work involved integrating different services, managing dependencies, handling asynchronous logic, and making sure that experimental changes did not break the working version of the application. Working in a team repository also made Git workflow more important, because unfinished features had to be separated from stable code.
 
 **What was achieved:**
 
 - A production-quality full-stack application with a working UI, authentication, file uploads, AI integration, and an admin panel
 - A clean, testable class hierarchy that maps directly to the coursework OOP requirements
 - Zero `flake8` violations with the agreed 120-character line limit
+- A more realistic understanding of teamwork, branching, dependency management, API integration, and technical documentation
 
 **Future prospects:**
 
-- Add a third `TranscriberFactory` branch for direct audio file uploads (MP3, WAV)
-- Introduce a `Subscription` strategy pattern to gate features by user tier
-- Replace the simple TXT importer with a CSV importer that supports additional metadata (title, language hint) per URL
+- Introduce a `Subscription` strategy pattern to gate features by user tier.
+
+- Develop a deeper video understanding system that analyzes not only the transcription, but also the visual timeline of the video. For example, the system could recognize when a speaker starts writing on a whiteboard, stops writing, moves to another part of the board, or changes to a new slide. This would make the AI more aware of what is happening at specific moments in the video, not only what is being said. In presentation videos, the system could detect when a new slide appears and connect each part of the transcription to the correct visual context. This would make the chat experience more accurate because the AI would understand both the spoken explanation and the visual material shown at that time.
+
+- Add support for AI interaction directly with video frames. In the future, the system could allow the AI to visually annotate the current frame, for example by crossing out incorrect information, drawing a graph, highlighting an important formula, or marking a specific part of a slide or whiteboard. This would make the application more interactive and useful for learning, because the AI would not only explain the video content in text, but also work with the visual content itself.
+
+- Extend language support beyond English. Currently, the project works mainly with English transcription and chat interaction. A useful improvement would be to support more languages, especially languages used by local students. However, this may be difficult for smaller languages such as Lithuanian or Latvian, where transcription quality and AI understanding may be less reliable than for English.
+
+- Improve the legal and technical approach to video frame extraction. At the moment, video processing depends on downloading or handling videos through FFmpeg. In the future, it would be better to design a more legally safe and platform-friendly way to capture or reference video frames, especially for videos from external platforms such as YouTube. This would make the application more reliable and easier to use in real-world conditions.
+
+- Finish and polish the project so it can become either a product that could be presented or sold in the future, or at least a strong GitHub portfolio project that can be shown on a CV.
 
 ---
 
