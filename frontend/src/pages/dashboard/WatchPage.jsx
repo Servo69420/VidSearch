@@ -72,7 +72,7 @@ async function sendMessageToAPI(videoId, messages, frameBase64, currentTimeS, tx
     body: JSON.stringify({
       video_id: videoId,
       message: messages
-        .filter(m => m.role === 'user')
+        .filter(m => m.role === 'user' || m.role === 'assistant')
         .map(m => ({ role: m.role, content: m.text })),
       ...(frameBase64 ? { frame_base64: frameBase64 } : {}),
       ...(currentTimeS != null ? { current_time_s: currentTimeS } : {}),
@@ -702,13 +702,18 @@ export default function WatchPage({ params }) {
   function handleTxtFileChange(e) {
     const file = e.target.files?.[0]
     if (!file) return
+    console.log('[txt] file picked:', file.name, 'size:', file.size)
     const reader = new FileReader()
     reader.onload = (ev) => {
+      console.log('[txt] onload result:', JSON.stringify(ev.target.result))
       setImportedTxt({ name: file.name, content: ev.target.result })
       setAttachMenuOpen(false)
+      e.target.value = ''
+    }
+    reader.onerror = (ev) => {
+      console.error('[txt] read error:', ev.target.error)
     }
     reader.readAsText(file)
-    e.target.value = ''
   }
 
   async function captureCurrentFrame() {

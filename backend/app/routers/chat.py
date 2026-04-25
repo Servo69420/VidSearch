@@ -43,6 +43,8 @@ SYSTEM_PROMPT = (
     "display math, so the UI renders proper superscripts and symbols. "
     "The end user might also attach an image of the current video scene using a trigger button, "
     "incorporate it in your answer if relevant and if you understand the image content. "
+    "The end user might also attach a text file — its full content will appear in a system message. "
+    "Read and analyse the text file content carefully and use it to answer the user's question. "
 )
 
 
@@ -371,7 +373,11 @@ async def ask(
     if request.txt_context:
         openai_messages.append({
             "role": "system",
-            "content": f"Additional context provided by the user:\n\n{request.txt_context}",
+            "content": (
+                "The user has attached a text file. Read and analyse its full content carefully "
+                "to answer their question.\n\n"
+                f"--- ATTACHED TEXT FILE ---\n{request.txt_context}\n--- END OF FILE ---"
+            ),
         })
 
     valid_msgs = [
@@ -381,11 +387,17 @@ async def ask(
 
     for i, msg in enumerate(valid_msgs):
         is_last_user = msg["role"] == "user" and i == len(valid_msgs) - 1
+        msg_content = msg["content"]
+        if is_last_user and request.txt_context:
+            msg_content = (
+                f"<attached_file>\n{request.txt_context}\n</attached_file>\n\n"
+                + msg_content
+            )
         if is_last_user and request.frame_base64:
             openai_messages.append({
                 "role": "user",
                 "content": [
-                    {"type": "text", "text": msg["content"]},
+                    {"type": "text", "text": msg_content},
                     {
                         "type": "image_url",
                         "image_url": {
@@ -395,7 +407,7 @@ async def ask(
                 ],
             })
         else:
-            openai_messages.append({"role": msg["role"], "content": msg["content"]})
+            openai_messages.append({"role": msg["role"], "content": msg_content})
 
     active_model = VISION_MODEL if request.frame_base64 else None
 
