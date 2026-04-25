@@ -9,6 +9,7 @@ python-multipart
 httpx
 
 # For audio processing and transcription
-openai-whisper
+openai
 ffmpeg-python
 youtube-transcript-api
+yt-dlp

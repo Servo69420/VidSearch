@@ -24,6 +24,7 @@ class User:
         surname: str = "",
         avatar_url: str = "",
         subscription: str = "free",
+        is_admin: bool = False,
         hobbies: Optional[list[str]] = None,
         created_at: Optional[datetime] = None,
     ) -> None:
@@ -34,6 +35,7 @@ class User:
         self._surname = surname
         self._avatar_url = avatar_url
         self._subscription = subscription
+        self._is_admin = is_admin
         self._hobbies = list(hobbies or [])
         self._created_at = created_at
 
@@ -68,6 +70,10 @@ class User:
         return self._subscription
 
     @property
+    def is_admin(self) -> bool:
+        return self._is_admin
+
+    @property
     def hobbies(self) -> list[str]:
         return list(self._hobbies)
 
@@ -88,6 +94,7 @@ class User:
             surname=row.get("surname") or "",
             avatar_url=row.get("avatar_url") or "",
             subscription=row.get("subscription") or "free",
+            is_admin=bool(row.get("is_admin") or False),
             hobbies=list(row.get("hobbies") or []),
             created_at=row.get("created_at"),
         )
@@ -104,6 +111,7 @@ class User:
             "surname": self._surname,
             "avatar_url": self._avatar_url,
             "subscription": self._subscription,
+            "is_admin": self._is_admin,
             "hobbies": self.hobbies,
             "created_at": (
                 self._created_at.isoformat() if self._created_at else None

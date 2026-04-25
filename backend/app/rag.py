@@ -9,13 +9,17 @@ Usage (called after transcription is complete)::
     pipeline = RAGPipeline(db)
     await pipeline.process(transcription_id)
 """
-#TODO: INCOMPLETE DONT TOUCH FOR NOW
 from __future__ import annotations
 
 import json
 import logging
+import math
+import uuid
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+
+from app.model_config import MODEL_CONFIG
+from app.embedder import OpenRouterEmbedder
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +31,7 @@ logger = logging.getLogger(__name__)
 @dataclass(frozen=True)
 class Segment:
     """Single transcript segment straight from the JSONB column."""
+    idx: int
     start: float
     end: float
     text: str
@@ -36,24 +41,43 @@ class Segment:
 class Chunk:
     """A group of consecutive segments treated as one semantic unit."""
     idx: int
+    level: int
     start_s: float
     end_s: float
     text: str
-    segments: tuple[Segment, ...] = field(repr=False)
+    segment_start_idx: int | None = None
+    segment_end_idx: int | None = None
+    segments: tuple[Segment, ...] = field(default_factory=tuple, repr=False)
 
 
 @dataclass
 class ProcessedChunk:
     """Chunk after embedding + summarization — ready for DB insert."""
+    chunk_id: str
     idx: int
+    level: int
     start_s: float
     end_s: float
     text: str
+    parent_chunk_id: str | None = None
+    segment_start_idx: int | None = None
+    segment_end_idx: int | None = None
     summary: str | None = None
     role: str | None = None
     keywords: list[str] = field(default_factory=list)
     embedding: list[float] | None = None
     summary_embedding: list[float] | None = None
+
+
+@dataclass(frozen=True)
+class RetrievedChunk:
+    idx: int
+    level: int
+    start_s: float
+    end_s: float
+    text: str
+    score: float
+    topic_summary: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -69,7 +93,7 @@ class ChunkingStrategy(ABC):
 
 
 class Embedder(ABC):
-    """Produces a dense vector from text.  Dimension must be 384."""
+    """Produces a dense vector from text."""
 
     @abstractmethod
     async def embed(self, texts: list[str]) -> list[list[float]]:
@@ -102,13 +126,16 @@ class FixedWindowChunker(ChunkingStrategy):
     def chunk(self, segments: list[Segment]) -> list[Chunk]:
         chunks: list[Chunk] = []
         for i in range(0, len(segments), self._window):
-            batch = segments[i : i + self._window]
+            batch = segments[i:i + self._window]
             chunks.append(
                 Chunk(
                     idx=len(chunks),
+                    level=1,
                     start_s=batch[0].start,
                     end_s=batch[-1].end,
                     text=" ".join(s.text for s in batch),
+                    segment_start_idx=batch[0].idx,
+                    segment_end_idx=batch[-1].idx,
                     segments=tuple(batch),
                 )
             )
@@ -116,12 +143,10 @@ class FixedWindowChunker(ChunkingStrategy):
 
 
 class PlaceholderEmbedder(Embedder):
-    """Returns zero-vectors.  Replace with a real model (e.g. sentence-
-    transformers ``all-MiniLM-L6-v2`` or ``bge-small-en-v1.5``).
-    """
+    """Returns zero-vectors. Replace with a real model for production."""
 
     async def embed(self, texts: list[str]) -> list[list[float]]:
-        return [[0.0] * 384 for _ in texts]
+        return [[0.0] * MODEL_CONFIG.embedding_dimensions for _ in texts]
 
 
 class PlaceholderSummarizer(Summarizer):
@@ -154,11 +179,15 @@ class RAGPipeline:
         chunker: ChunkingStrategy | None = None,
         embedder: Embedder | None = None,
         summarizer: Summarizer | None = None,
+        section_summarizer: Summarizer | None = None,
+        embed_batch_size: int = MODEL_CONFIG.rag_embed_batch_size,
     ) -> None:
         self._db = db
         self._chunker = chunker or FixedWindowChunker()
-        self._embedder = embedder or PlaceholderEmbedder()
-        self._summarizer = summarizer or PlaceholderSummarizer()
+        self._embedder = embedder or OpenRouterEmbedder()
+        self._summarizer = summarizer
+        self._section_summarizer = section_summarizer
+        self._embed_batch_size = max(embed_batch_size, 1)
 
     # -- public entry point -------------------------------------------------
 
@@ -171,19 +200,295 @@ class RAGPipeline:
         try:
             await self._set_status(transcription_id, "chunking")
             segments = await self._load_segments(transcription_id)
-            chunks = self._chunker.chunk(segments)
+            leaf_chunks = self._chunker.chunk(segments)
+            logger.info(
+                "RAG chunking complete for %s (segments=%s, leaf_chunks=%s)",
+                transcription_id,
+                len(segments),
+                len(leaf_chunks),
+            )
 
             await self._set_status(transcription_id, "summarizing")
-            processed = await self._embed_and_summarize(chunks)
+
+            processed_leaves = await self._embed_leaf_chunks(leaf_chunks)
+            processed_topics: list[ProcessedChunk] = []
+            processed_sections: list[ProcessedChunk] = []
+
+            if self._summarizer and processed_leaves:
+                topic_ranges = self._build_topic_ranges(processed_leaves)
+                topic_chunks = self._build_topic_chunks(leaf_chunks, topic_ranges)
+                processed_topics = await self._summarize_topic_chunks(topic_chunks)
+                self._attach_topic_parents(
+                    processed_leaves,
+                    processed_topics,
+                    topic_ranges,
+                )
+                logger.info(
+                    "RAG phase-2 topics complete for %s (topic_chunks=%s)",
+                    transcription_id,
+                    len(processed_topics),
+                )
+
+                if (
+                    self._section_summarizer
+                    and len(processed_topics)
+                    >= MODEL_CONFIG.phase3_section_min_topic_chunks
+                ):
+                    section_ranges = self._build_section_ranges(processed_topics)
+                    section_chunks = self._build_section_chunks(
+                        topic_chunks,
+                        processed_topics,
+                        section_ranges,
+                    )
+                    processed_sections = await self._summarize_section_chunks(
+                        section_chunks
+                    )
+                    self._attach_section_parents(
+                        processed_topics,
+                        processed_sections,
+                        section_ranges,
+                    )
+                    logger.info(
+                        "RAG phase-3 sections complete for %s (section_chunks=%s)",
+                        transcription_id,
+                        len(processed_sections),
+                    )
+
+            processed = processed_sections + processed_topics + processed_leaves
 
             await self._store_chunks(transcription_id, processed)
             await self._set_status(transcription_id, "ready")
+            logger.info(
+                "RAG indexing ready for %s (chunks=%s)",
+                transcription_id,
+                len(processed),
+            )
             return processed
 
         except Exception:
             logger.exception("RAG pipeline failed for %s", transcription_id)
             await self._set_status(transcription_id, "failed")
             raise
+
+    async def search(
+        self,
+        transcription_id: str,
+        query: str,
+        *,
+        top_k: int = 6,
+    ) -> list[RetrievedChunk]:
+        if not query.strip() or top_k <= 0:
+            return []
+
+        query_vector = (await self._embedder.embed([query]))[0]
+        query_vector_literal = str(query_vector)
+
+        section_hits = await self._search_section_first(
+            transcription_id,
+            query_vector_literal,
+            top_k,
+        )
+        if section_hits:
+            logger.info(
+                "RAG section-first search for %s returned %s chunks (top_k=%s)",
+                transcription_id,
+                len(section_hits),
+                top_k,
+            )
+            return section_hits[:top_k]
+
+        topic_hits = await self._search_topic_first(
+            transcription_id,
+            query_vector_literal,
+            top_k,
+        )
+        logger.info(
+            "RAG topic-first search for %s returned %s chunks (top_k=%s)",
+            transcription_id,
+            len(topic_hits),
+            top_k,
+        )
+        return topic_hits[:top_k]
+
+    async def _search_section_first(
+        self,
+        transcription_id: str,
+        query_vector_literal: str,
+        top_k: int,
+    ) -> list[RetrievedChunk]:
+        # Fan-out: section_limit × 2 topics × 2 leaves. ceil(top_k/4) keeps
+        # the candidate pool ≥ top_k while respecting the coarse-to-fine funnel.
+        section_limit = max(1, (top_k + 3) // 4)
+
+        section_rows = await self._db.fetch(
+            """SELECT id, idx, start_s, end_s, summary,
+                      (1 - (summary_embedding <=> $2::vector)) AS score
+               FROM transcript_chunks
+               WHERE transcription_id = $1::uuid
+                 AND level = 3
+                 AND summary_embedding IS NOT NULL
+               ORDER BY summary_embedding <=> $2::vector
+               LIMIT $3""",
+            transcription_id,
+            query_vector_literal,
+            section_limit,
+        )
+        if not section_rows:
+            return []
+
+        hits: list[RetrievedChunk] = []
+        for section in section_rows:
+            section_score = float(section["score"] or 0.0)
+            section_summary = section["summary"] or ""
+
+            topic_rows = await self._db.fetch(
+                """SELECT id, idx, start_s, end_s, summary,
+                          (1 - (summary_embedding <=> $3::vector)) AS score
+                   FROM transcript_chunks
+                   WHERE transcription_id = $1::uuid
+                     AND level = 2
+                     AND parent_chunk_id = $2::uuid
+                     AND summary_embedding IS NOT NULL
+                   ORDER BY summary_embedding <=> $3::vector
+                   LIMIT 2""",
+                transcription_id,
+                section["id"],
+                query_vector_literal,
+            )
+
+            if not topic_rows:
+                hits.append(
+                    RetrievedChunk(
+                        idx=section["idx"],
+                        level=3,
+                        start_s=section["start_s"],
+                        end_s=section["end_s"],
+                        text=section_summary,
+                        score=section_score,
+                        topic_summary=section_summary,
+                    )
+                )
+                continue
+
+            for topic in topic_rows:
+                topic_score = float(topic["score"] or section_score)
+                topic_summary = topic["summary"] or ""
+
+                leaf_rows = await self._db.fetch(
+                    """SELECT idx, start_s, end_s, text,
+                              (1 - (embedding <=> $3::vector)) AS score
+                       FROM transcript_chunks
+                       WHERE transcription_id = $1::uuid
+                         AND level = 1
+                         AND parent_chunk_id = $2::uuid
+                         AND embedding IS NOT NULL
+                       ORDER BY embedding <=> $3::vector
+                       LIMIT 2""",
+                    transcription_id,
+                    topic["id"],
+                    query_vector_literal,
+                )
+
+                if not leaf_rows:
+                    hits.append(
+                        RetrievedChunk(
+                            idx=topic["idx"],
+                            level=2,
+                            start_s=topic["start_s"],
+                            end_s=topic["end_s"],
+                            text=topic_summary,
+                            score=topic_score,
+                            topic_summary=topic_summary,
+                        )
+                    )
+                    continue
+
+                for leaf in leaf_rows:
+                    hits.append(
+                        RetrievedChunk(
+                            idx=leaf["idx"],
+                            level=1,
+                            start_s=leaf["start_s"],
+                            end_s=leaf["end_s"],
+                            text=leaf["text"],
+                            score=float(leaf["score"] or topic_score),
+                            topic_summary=topic_summary,
+                        )
+                    )
+
+        hits.sort(key=lambda item: item.score, reverse=True)
+        return hits
+
+    async def _search_topic_first(
+        self,
+        transcription_id: str,
+        query_vector_literal: str,
+        top_k: int,
+    ) -> list[RetrievedChunk]:
+        topic_rows = await self._db.fetch(
+            """SELECT id, idx, start_s, end_s, summary,
+                      (1 - (summary_embedding <=> $2::vector)) AS score
+               FROM transcript_chunks
+               WHERE transcription_id = $1::uuid
+                 AND level = 2
+                 AND summary_embedding IS NOT NULL
+               ORDER BY summary_embedding <=> $2::vector
+               LIMIT $3""",
+            transcription_id,
+            query_vector_literal,
+            max(1, top_k),
+        )
+        if not topic_rows:
+            return []
+
+        hits: list[RetrievedChunk] = []
+        for topic in topic_rows:
+            child_rows = await self._db.fetch(
+                """SELECT idx, start_s, end_s, text,
+                          (1 - (embedding <=> $3::vector)) AS score
+                   FROM transcript_chunks
+                   WHERE transcription_id = $1::uuid
+                     AND level = 1
+                     AND parent_chunk_id = $2::uuid
+                     AND embedding IS NOT NULL
+                   ORDER BY embedding <=> $3::vector
+                   LIMIT 2""",
+                transcription_id,
+                topic["id"],
+                query_vector_literal,
+            )
+
+            topic_score = float(topic["score"] or 0.0)
+            topic_summary = topic["summary"] or ""
+
+            if child_rows:
+                for child in child_rows:
+                    hits.append(
+                        RetrievedChunk(
+                            idx=child["idx"],
+                            level=1,
+                            start_s=child["start_s"],
+                            end_s=child["end_s"],
+                            text=child["text"],
+                            score=float(child["score"] or topic_score),
+                            topic_summary=topic_summary,
+                        )
+                    )
+            else:
+                hits.append(
+                    RetrievedChunk(
+                        idx=topic["idx"],
+                        level=2,
+                        start_s=topic["start_s"],
+                        end_s=topic["end_s"],
+                        text=topic_summary,
+                        score=topic_score,
+                        topic_summary=topic_summary,
+                    )
+                )
+
+        hits.sort(key=lambda item: item.score, reverse=True)
+        return hits
 
     # -- internal helpers ---------------------------------------------------
 
@@ -199,57 +504,300 @@ class RAGPipeline:
         if isinstance(raw, str):
             raw = json.loads(raw)
 
-        return [Segment(start=s["start"], end=s["end"], text=s["text"]) for s in raw]
+        return [
+            Segment(
+                idx=i,
+                start=s["start"],
+                end=s["end"],
+                text=s["text"],
+            )
+            for i, s in enumerate(raw)
+        ]
 
-    async def _embed_and_summarize(
-        self, chunks: list[Chunk]
-    ) -> list[ProcessedChunk]:
-        # Batch-embed all chunk texts at once
+    async def _embed_leaf_chunks(self, chunks: list[Chunk]) -> list[ProcessedChunk]:
         texts = [c.text for c in chunks]
-        embeddings = await self._embedder.embed(texts)
+        embeddings = await self._embed_texts(texts)
 
         processed: list[ProcessedChunk] = []
         for chunk, emb in zip(chunks, embeddings):
-            summary, role, keywords = await self._summarizer.summarize(chunk)
-
-            # Embed the summary too (for summary-level search)
-            summary_emb = (await self._embedder.embed([summary]))[0] if summary else None
-
             processed.append(
                 ProcessedChunk(
+                    chunk_id=str(uuid.uuid4()),
                     idx=chunk.idx,
+                    level=1,
                     start_s=chunk.start_s,
                     end_s=chunk.end_s,
                     text=chunk.text,
-                    summary=summary,
-                    role=role,
-                    keywords=keywords,
+                    segment_start_idx=chunk.segment_start_idx,
+                    segment_end_idx=chunk.segment_end_idx,
                     embedding=emb,
-                    summary_embedding=summary_emb,
+                    summary_embedding=None,
                 )
             )
         return processed
 
-    async def _store_chunks(
-        self, transcription_id: str, chunks: list[ProcessedChunk]
+    def _build_topic_ranges(self, leaves: list[ProcessedChunk]) -> list[tuple[int, int]]:
+        if not leaves:
+            return []
+
+        min_leaves = MODEL_CONFIG.phase2_topic_min_leaf_chunks
+        max_leaves = max(min_leaves, MODEL_CONFIG.phase2_topic_max_leaf_chunks)
+        break_similarity = MODEL_CONFIG.phase2_topic_break_similarity
+
+        ranges: list[tuple[int, int]] = []
+        start = 0
+
+        for idx in range(1, len(leaves)):
+            prev = leaves[idx - 1].embedding or []
+            curr = leaves[idx].embedding or []
+            similarity = self._vector_similarity(prev, curr)
+            current_size = idx - start
+
+            should_break = current_size >= max_leaves or (
+                current_size >= min_leaves and similarity < break_similarity
+            )
+            if should_break:
+                ranges.append((start, idx - 1))
+                start = idx
+
+        ranges.append((start, len(leaves) - 1))
+
+        if len(ranges) >= 2:
+            last_start, last_end = ranges[-1]
+            if last_end - last_start + 1 < min_leaves:
+                prev_start, _ = ranges[-2]
+                ranges[-2] = (prev_start, last_end)
+                ranges.pop()
+
+        return ranges
+
+    def _vector_similarity(self, left: list[float], right: list[float]) -> float:
+        if not left or not right:
+            return 1.0
+
+        dot = 0.0
+        norm_left = 0.0
+        norm_right = 0.0
+        for a, b in zip(left, right):
+            dot += a * b
+            norm_left += a * a
+            norm_right += b * b
+
+        if norm_left <= 0.0 or norm_right <= 0.0:
+            return 0.0
+        return dot / (math.sqrt(norm_left) * math.sqrt(norm_right))
+
+    def _build_topic_chunks(
+        self,
+        leaves: list[Chunk],
+        topic_ranges: list[tuple[int, int]],
+    ) -> list[Chunk]:
+        topics: list[Chunk] = []
+        for idx, (start_leaf_idx, end_leaf_idx) in enumerate(topic_ranges):
+            batch = leaves[start_leaf_idx:end_leaf_idx + 1]
+            topics.append(
+                Chunk(
+                    idx=idx,
+                    level=2,
+                    start_s=batch[0].start_s,
+                    end_s=batch[-1].end_s,
+                    text=" ".join(item.text for item in batch),
+                    segment_start_idx=batch[0].segment_start_idx,
+                    segment_end_idx=batch[-1].segment_end_idx,
+                )
+            )
+        return topics
+
+    async def _summarize_topic_chunks(
+        self,
+        topic_chunks: list[Chunk],
+    ) -> list[ProcessedChunk]:
+        if not self._summarizer:
+            return []
+
+        processed: list[ProcessedChunk] = []
+        for topic in topic_chunks:
+            summary, role, keywords = await self._summarizer.summarize(topic)
+            summary_vector = None
+            if summary:
+                summary_vector = (await self._embed_texts([summary]))[0]
+
+            processed.append(
+                ProcessedChunk(
+                    chunk_id=str(uuid.uuid4()),
+                    idx=topic.idx,
+                    level=2,
+                    start_s=topic.start_s,
+                    end_s=topic.end_s,
+                    text=topic.text,
+                    segment_start_idx=topic.segment_start_idx,
+                    segment_end_idx=topic.segment_end_idx,
+                    summary=summary,
+                    role=role,
+                    keywords=keywords,
+                    embedding=None,
+                    summary_embedding=summary_vector,
+                )
+            )
+
+        return processed
+
+    def _attach_topic_parents(
+        self,
+        leaves: list[ProcessedChunk],
+        topics: list[ProcessedChunk],
+        topic_ranges: list[tuple[int, int]],
     ) -> None:
-        # Clear any previous chunks for idempotency
+        for topic, (start_idx, end_idx) in zip(topics, topic_ranges):
+            for leaf_idx in range(start_idx, end_idx + 1):
+                leaves[leaf_idx].parent_chunk_id = topic.chunk_id
+
+    def _build_section_ranges(
+        self,
+        topics: list[ProcessedChunk],
+    ) -> list[tuple[int, int]]:
+        if not topics:
+            return []
+
+        min_topics = MODEL_CONFIG.phase3_section_min_topic_chunks
+        max_topics = max(min_topics, MODEL_CONFIG.phase3_section_max_topic_chunks)
+        break_similarity = MODEL_CONFIG.phase3_section_break_similarity
+
+        ranges: list[tuple[int, int]] = []
+        start = 0
+
+        for idx in range(1, len(topics)):
+            prev = topics[idx - 1].summary_embedding or []
+            curr = topics[idx].summary_embedding or []
+            similarity = self._vector_similarity(prev, curr)
+            current_size = idx - start
+
+            should_break = current_size >= max_topics or (
+                current_size >= min_topics and similarity < break_similarity
+            )
+            if should_break:
+                ranges.append((start, idx - 1))
+                start = idx
+
+        ranges.append((start, len(topics) - 1))
+
+        if len(ranges) >= 2:
+            last_start, last_end = ranges[-1]
+            if last_end - last_start + 1 < min_topics:
+                prev_start, _ = ranges[-2]
+                ranges[-2] = (prev_start, last_end)
+                ranges.pop()
+
+        return ranges
+
+    def _build_section_chunks(
+        self,
+        topic_chunks: list[Chunk],
+        processed_topics: list[ProcessedChunk],
+        section_ranges: list[tuple[int, int]],
+    ) -> list[Chunk]:
+        sections: list[Chunk] = []
+        for idx, (start_idx, end_idx) in enumerate(section_ranges):
+            topic_range = topic_chunks[start_idx:end_idx + 1]
+            summary_texts: list[str] = []
+            for t_idx in range(start_idx, end_idx + 1):
+                summary = processed_topics[t_idx].summary
+                summary_texts.append(
+                    summary if summary else topic_chunks[t_idx].text
+                )
+            sections.append(
+                Chunk(
+                    idx=idx,
+                    level=3,
+                    start_s=topic_range[0].start_s,
+                    end_s=topic_range[-1].end_s,
+                    text=" ".join(summary_texts),
+                    segment_start_idx=topic_range[0].segment_start_idx,
+                    segment_end_idx=topic_range[-1].segment_end_idx,
+                )
+            )
+        return sections
+
+    async def _summarize_section_chunks(
+        self,
+        section_chunks: list[Chunk],
+    ) -> list[ProcessedChunk]:
+        if not self._section_summarizer:
+            return []
+
+        processed: list[ProcessedChunk] = []
+        for section in section_chunks:
+            summary, role, keywords = await self._section_summarizer.summarize(section)
+            summary_vector = None
+            if summary:
+                summary_vector = (await self._embed_texts([summary]))[0]
+
+            processed.append(
+                ProcessedChunk(
+                    chunk_id=str(uuid.uuid4()),
+                    idx=section.idx,
+                    level=3,
+                    start_s=section.start_s,
+                    end_s=section.end_s,
+                    text=section.text,
+                    segment_start_idx=section.segment_start_idx,
+                    segment_end_idx=section.segment_end_idx,
+                    summary=summary,
+                    role=role,
+                    keywords=keywords,
+                    embedding=None,
+                    summary_embedding=summary_vector,
+                )
+            )
+
+        return processed
+
+    def _attach_section_parents(
+        self,
+        topics: list[ProcessedChunk],
+        sections: list[ProcessedChunk],
+        section_ranges: list[tuple[int, int]],
+    ) -> None:
+        for section, (start_idx, end_idx) in zip(sections, section_ranges):
+            for topic_idx in range(start_idx, end_idx + 1):
+                topics[topic_idx].parent_chunk_id = section.chunk_id
+
+    async def _embed_texts(self, texts: list[str]) -> list[list[float]]:
+        vectors: list[list[float]] = []
+        for i in range(0, len(texts), self._embed_batch_size):
+            batch = texts[i:i + self._embed_batch_size]
+            vectors.extend(await self._embedder.embed(batch))
+        return vectors
+
+    async def _store_chunks(
+        self,
+        transcription_id: str,
+        chunks: list[ProcessedChunk],
+    ) -> None:
         await self._db.execute(
             "DELETE FROM transcript_chunks WHERE transcription_id = $1::uuid",
             transcription_id,
         )
+
         for c in chunks:
             await self._db.execute(
                 """INSERT INTO transcript_chunks
-                   (transcription_id, idx, start_s, end_s, text,
+                   (id, transcription_id, idx, level, parent_chunk_id,
+                    start_s, end_s, text, segment_start_idx, segment_end_idx,
                     summary, role, keywords, embedding, summary_embedding)
-                   VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8,
-                           $9::vector, $10::vector)""",
+                   VALUES ($1::uuid, $2::uuid, $3, $4, $5::uuid,
+                           $6, $7, $8, $9, $10, $11, $12, $13,
+                           $14::vector, $15::vector)""",
+                c.chunk_id,
                 transcription_id,
                 c.idx,
+                c.level,
+                c.parent_chunk_id,
                 c.start_s,
                 c.end_s,
                 c.text,
+                c.segment_start_idx,
+                c.segment_end_idx,
                 c.summary,
                 c.role,
                 c.keywords,

@@ -124,7 +124,7 @@ class TestUserToDict(unittest.TestCase):
         d = user.to_dict()
         expected_keys = {
             "id", "username", "email", "name", "surname",
-            "avatar_url", "subscription", "hobbies", "created_at",
+            "avatar_url", "subscription", "is_admin", "hobbies", "created_at",
         }
         self.assertEqual(set(d.keys()), expected_keys)
 

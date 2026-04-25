@@ -1,21 +1,27 @@
 
-#Added tests : conda run -n VidSearchpy11 python -m unittest discover -s tests -v
-#Added tests : conda run -n VidSearchpy12 python -m unittest discover -s tests -v
+# Run tests: conda run -n VidSearchpy11 python -m unittest discover -s tests -v
+# Run tests: conda run -n VidSearchpy12 python -m unittest discover -s tests -v
 
-import asyncio
-from contextlib import asynccontextmanager
-from pathlib import Path
+import os
+import sys
 
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
-from app.routers import chat
-from app.routers import files
-from app.database import connect, disconnect
-from app.routers import auth
-from app.routers import transcription
-from app.models.background_tasks import TokenCleanupTask
-from app.routers import chat_history
+# Ensure the conda env's binaries (ffmpeg, etc.) are visible to subprocesses.
+_conda_bin = os.path.join(sys.prefix, "Library", "bin")
+if _conda_bin not in os.environ.get("PATH", ""):
+    os.environ["PATH"] = _conda_bin + os.pathsep + os.environ.get("PATH", "")
+
+import asyncio  # noqa: E402
+from contextlib import asynccontextmanager  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+from fastapi import FastAPI  # noqa: E402
+from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
+from fastapi.staticfiles import StaticFiles  # noqa: E402
+from app.routers import admin, chat, chat_history, files, frame_capture  # noqa: E402
+from app.database import connect, disconnect  # noqa: E402
+from app.routers import auth  # noqa: E402
+from app.routers import transcription  # noqa: E402
+from app.models.background_tasks import TokenCleanupTask  # noqa: E402
 
 
 UPLOAD_DIR = Path(__file__).resolve().parent / "uploads"
@@ -61,3 +67,5 @@ async def health():
 app.include_router(
     transcription.router, prefix="/transcription", tags=["transcription"]
 )
+app.include_router(frame_capture.router, tags=["frame-capture"])
+app.include_router(admin.router, prefix="/admin", tags=["admin"])

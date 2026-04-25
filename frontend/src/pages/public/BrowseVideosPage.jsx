@@ -4,11 +4,16 @@ import { useWatchLater } from '../../contexts/WatchLaterContext'
 import { useUserVideos } from '../../contexts/UserVideosContext'
 import VideoCard from '../../components/ui/VideoCard'
 import SearchBar from '../../components/ui/SearchBar'
+import { navigate } from '../../router'
 import './BrowseVideosPage.css'
 
 export default function BrowseVideosPage() {
   const { toggle, isFavourite } = useWatchLater()
   const { userVideos } = useUserVideos()
+  const youtubeUserVideos = useMemo(
+    () => userVideos.filter(v => v.type === 'youtube'),
+    [userVideos]
+  )
 
   const [search, setSearch] = useState('')
   const [activeTopic, setActiveTopic] = useState(() => {
@@ -31,11 +36,11 @@ export default function BrowseVideosPage() {
 
   const filtered = useMemo(() => {
     if (activeTopic === 'My Videos') {
-      let vids = userVideos.map(v => ({
+      let vids = youtubeUserVideos.map(v => ({
         id: v.id,
         title: v.title,
-        subject: v.type === 'youtube' ? 'YouTube Video' : 'Uploaded File',
-        color: v.type === 'youtube' ? 'thumb-sky' : 'thumb-teal',
+        subject: 'YouTube Video',
+        color: 'thumb-sky',
         icon: '▶',
         duration: '',
         _isUserVideo: true,
@@ -73,14 +78,14 @@ export default function BrowseVideosPage() {
     if (sort === 'subject') vids.sort((a, b) => a.subject.localeCompare(b.subject))
 
     return vids
-  }, [search, activeTopic, sort, isFavourite, userVideos])
+  }, [search, activeTopic, sort, isFavourite, youtubeUserVideos])
 
   function handleVideoClick(v) {
     if (v._isUserVideo) {
       sessionStorage.setItem('openUserVideo', JSON.stringify(v._userVideoData))
-      window.location.hash = '#/watch'
+      navigate('/watch')
     } else {
-      window.location.hash = `#/watch/${v.id}`
+      navigate(`/watch/${v.id}`)
     }
   }
 
@@ -128,7 +133,7 @@ export default function BrowseVideosPage() {
             className={`topic-btn topic-btn-mine ${activeTopic === 'My Videos' ? 'active' : ''}`}
             onClick={() => setActiveTopic('My Videos')}
           >
-            ▶ My Videos ({userVideos.length})
+            ▶ My Videos ({youtubeUserVideos.length})
           </button>
           {TOPICS.map(t => (
             <button
@@ -157,7 +162,7 @@ export default function BrowseVideosPage() {
               {activeTopic === 'Favourite'
                 ? 'Click the ♡ on any video to add it to your favourites.'
                 : activeTopic === 'My Videos'
-                ? 'Load a YouTube URL or upload a video file in the workspace to add your own videos.'
+                ? 'Load a YouTube URL in the workspace to add it to your videos.'
                 : 'Try adjusting your search or filter criteria.'}
             </p>
           </div>

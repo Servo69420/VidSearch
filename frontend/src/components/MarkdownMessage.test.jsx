@@ -105,6 +105,26 @@ describe('MarkdownMessage', () => {
     })
   })
 
+  describe('math (KaTeX)', () => {
+    it('renders inline $x^3$ as a KaTeX element', () => {
+      const { container } = render(<MarkdownMessage content="equation $x^3$ here" />)
+      const katex = container.querySelector('.katex')
+      expect(katex).not.toBeNull()
+    })
+
+    it('renders $$...$$ as a KaTeX display element', () => {
+      const { container } = render(<MarkdownMessage content={'text\n\n$$\n\\frac{a}{b}\n$$\n\nmore'} />)
+      const display = container.querySelector('.katex-display')
+      expect(display).not.toBeNull()
+    })
+
+    it('leaves plain currency like $5 alone', () => {
+      const { container } = render(<MarkdownMessage content="costs $5 total" />)
+      expect(container.querySelector('.katex')).toBeNull()
+      expect(container.textContent).toContain('$5')
+    })
+  })
+
   describe('XSS safety', () => {
     it('does not execute script tags — renders them as escaped text', () => {
       const xssInput = "<script>alert('xss')</script>"

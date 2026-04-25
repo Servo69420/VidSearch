@@ -40,10 +40,25 @@
 .history-item:hover { background: var(--bg); }
 
 .history-icon {
-  font-size: 16px;
+  font-size: 20px;
   color: var(--text-muted);
   flex-shrink: 0;
-  margin-top: 2px;
+  width: 80px;
+  height: 45px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: 4px;
+  background: var(--bg);
+}
+
+.history-thumbnail {
+  width: 80px;
+  height: 45px;
+  object-fit: cover;
+  border-radius: 4px;
+  display: block;
 }
 
 .history-content { flex: 1; }
@@ -55,3 +70,33 @@
 
 .history-empty { text-align: center; padding: 40px 0; color: var(--text-muted); }
 .history-error { color: var(--error); }
+
+.history-context-menu {
+  position: fixed;
+  z-index: 1000;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+  padding: 4px;
+  min-width: 160px;
+}
+
+.history-context-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 12px;
+  border: none;
+  background: none;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  text-align: left;
+  transition: background var(--ease);
+}
+
+.history-context-item:hover { background: var(--bg); }
+
+.history-context-delete { color: var(--error); }

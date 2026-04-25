@@ -1,5 +1,6 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { navigate } from '../../router'
+import { useAuth } from '../../contexts/AuthContext'
 import SearchBar from '../../components/ui/SearchBar'
 import './HistoryPage.css'
 
@@ -25,58 +26,72 @@ function extractYouTubeId(url) {
   return match ? match[1] : null
 }
 
-function handleHistoryItemClick(h) {
+function formatVideoTitle(h) {
+  if (h.yt_source_url) {
+    const ytId = extractYouTubeId(h.yt_source_url)
+    if (h.video_title?.includes('youtube.com') || h.video_title?.includes('youtu.be')) {
+      return ytId ? `YouTube · ${ytId}` : 'YouTube Video'
+    }
+    return h.video_title || 'YouTube Video'
+  }
+  return h.uv_file_name || h.video_title || 'Uploaded Video'
+}
+
+const chatKey = (userId, vid) => `watchChat_${userId || 'anonymous'}_${vid}`
+const legacyChatKey = (vid) => `watchChat_${vid}`
+
+function removeChatCache(userId, videoIds) {
+  for (const id of videoIds.filter(Boolean)) {
+    localStorage.removeItem(chatKey(userId, id))
+    localStorage.removeItem(legacyChatKey(id))
+  }
+}
+
+function handleVideoClick(h) {
   if (h.yt_source_url) {
     const ytId = extractYouTubeId(h.yt_source_url)
     if (ytId) {
       sessionStorage.setItem('openUserVideo', JSON.stringify({
-        type: 'youtube', youtubeId: ytId, title: h.video_title,
+        type: 'youtube', youtubeId: ytId, title: formatVideoTitle(h),
       }))
     } else {
       sessionStorage.setItem('openUserVideo', JSON.stringify({
-        type: 'chat_only', chatVideoId: h.video_id, title: h.video_title,
+        type: 'chat_only', chatVideoId: h.video_id, title: formatVideoTitle(h),
       }))
     }
     navigate('/watch')
     return
   }
-  if (h.uv_file_path) {
-    const parts = h.uv_file_path.replace(/\\/g, '/').split('/')
-    const videosIdx = parts.lastIndexOf('videos')
-    const relative = videosIdx >= 0 ? parts.slice(videosIdx).join('/') : parts[parts.length - 1]
+  if (h.video_url && h.user_video_id) {
     sessionStorage.setItem('openUserVideo', JSON.stringify({
-      type: 'upload', localUrl: `http://localhost:8000/uploads/${relative}`,
-      title: h.video_title, videoId: h.user_video_id,
+      type: 'upload',
+      localUrl: `${API_BASE}${h.video_url}`,
+      title: formatVideoTitle(h),
+      videoId: h.user_video_id,
     }))
     navigate('/watch')
-    return
   }
-  navigate('/watch')
-}
-
-function formatVideoTitle(title) {
-  if (!title) return 'Unknown Video'
-  const ytMatch = title.match(/[?&]v=([^&]+)/)
-  if (ytMatch) return `YouTube · ${ytMatch[1]}`
-  return title
 }
 
 export default function HistoryPage() {
-  const [history, setHistory] = useState([])
+  const { user } = useAuth()
+  const [videos, setVideos] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [search, setSearch] = useState('')
   const [clearing, setClearing] = useState(false)
+  const [contextMenu, setContextMenu] = useState(null) // { x, y, video }
+  const menuRef = useRef(null)
 
-  const fetchHistory = useCallback(async () => {
+  const fetchVideos = useCallback(async () => {
     const token = localStorage.getItem('auth_token')
     if (!token) { setLoading(false); return }
     try {
-      const res = await fetch(`${API_BASE}/chat-history/all`, {
+      const res = await fetch(`${API_BASE}/chat-history/videos`, {
         headers: { Authorization: `Bearer ${token}` },
       })
       if (!res.ok) throw new Error('Failed to load history.')
-      setHistory(await res.json())
+      setVideos(await res.json())
     } catch (e) {
       setError(e.message)
     } finally {
@@ -84,10 +99,49 @@ export default function HistoryPage() {
     }
   }, [])
 
-  useEffect(() => { fetchHistory() }, [fetchHistory])
+  useEffect(() => { fetchVideos() }, [fetchVideos])
+
+  useEffect(() => {
+    function onPointerDown(e) {
+      if (menuRef.current && !menuRef.current.contains(e.target)) {
+        setContextMenu(null)
+      }
+    }
+    if (contextMenu) {
+      document.addEventListener('pointerdown', onPointerDown)
+      return () => document.removeEventListener('pointerdown', onPointerDown)
+    }
+  }, [contextMenu])
+
+  function handleContextMenu(e, h) {
+    e.preventDefault()
+    e.stopPropagation()
+    setContextMenu({ x: e.clientX, y: e.clientY, video: h })
+  }
+
+  async function handleDeleteChat(h) {
+    setContextMenu(null)
+    const id = h.video_id || h.user_video_id
+    if (!id) return
+    const token = localStorage.getItem('auth_token')
+    try {
+      const res = await fetch(`${API_BASE}/chat-history/video/${id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!res.ok) throw new Error()
+      const ytId = extractYouTubeId(h.yt_source_url)
+      removeChatCache(user?.id, [ytId, h.video_id, h.user_video_id])
+      setVideos(prev => prev.filter(v =>
+        (v.video_id || v.user_video_id) !== id
+      ))
+    } catch {
+      setError('Failed to delete chat.')
+    }
+  }
 
   async function handleClear() {
-    if (!window.confirm('Clear all question history? This cannot be undone.')) return
+    if (!window.confirm('Clear all chat history? This cannot be undone.')) return
     setClearing(true)
     const token = localStorage.getItem('auth_token')
     try {
@@ -96,7 +150,14 @@ export default function HistoryPage() {
         headers: { Authorization: `Bearer ${token}` },
       })
       if (!res.ok) throw new Error()
-      setHistory([])
+      for (const h of videos) {
+        removeChatCache(user?.id, [
+          extractYouTubeId(h.yt_source_url),
+          h.video_id,
+          h.user_video_id,
+        ])
+      }
+      setVideos([])
     } catch {
       setError('Failed to clear history.')
     } finally {
@@ -105,24 +166,21 @@ export default function HistoryPage() {
   }
 
   const filtered = search.trim()
-    ? history.filter(h =>
-        h.content.toLowerCase().includes(search.toLowerCase()) ||
-        formatVideoTitle(h.video_title).toLowerCase().includes(search.toLowerCase())
-      )
-    : history
+    ? videos.filter(h => formatVideoTitle(h).toLowerCase().includes(search.toLowerCase()))
+    : videos
 
   return (
     <div className="history-page">
       <div className="history-header">
         <div>
-          <h3>Question History</h3>
+          <h3>Chat History</h3>
           <p>
             {loading
               ? 'Loading…'
-              : `${history.length} question${history.length !== 1 ? 's' : ''} asked across all videos.`}
+              : `${videos.length} video${videos.length !== 1 ? 's' : ''} with chat history.`}
           </p>
         </div>
-        {history.length > 0 && (
+        {videos.length > 0 && (
           <button className="history-clear-btn" onClick={handleClear} disabled={clearing}>
             {clearing ? 'Clearing…' : 'Clear History'}
           </button>
@@ -130,7 +188,7 @@ export default function HistoryPage() {
       </div>
 
       <SearchBar
-        placeholder="Filter by question or video…"
+        placeholder="Filter by video title…"
         value={search}
         onChange={setSearch}
         className="history-search"
@@ -144,25 +202,61 @@ export default function HistoryPage() {
         <div className="history-empty">
           <p>
             {search
-              ? 'No matching questions found.'
-              : 'No questions asked yet. Start chatting in the workspace!'}
+              ? 'No matching videos found.'
+              : 'No chat history yet. Start chatting in the workspace!'}
           </p>
         </div>
       ) : (
         <div className="history-list">
-          {filtered.map(h => (
-            <div key={h.id} className="history-item" onClick={() => handleHistoryItemClick(h)}>
-              <div className="history-icon">&#128172;</div>
-              <div className="history-content">
-                <div className="history-query">{h.content}</div>
-                <div className="history-meta">
-                  <span className="history-video">{formatVideoTitle(h.video_title)}</span>
-                  <span className="history-dot">·</span>
-                  <span className="history-time">{formatTime(h.created_at)}</span>
+          {filtered.map((h, i) => {
+            const ytId = extractYouTubeId(h.yt_source_url)
+            const thumbnail = ytId
+              ? `https://img.youtube.com/vi/${ytId}/mqdefault.jpg`
+              : null
+            return (
+              <div
+                key={h.user_video_id || h.video_id || i}
+                className="history-item"
+                onClick={() => handleVideoClick(h)}
+                onContextMenu={e => handleContextMenu(e, h)}
+              >
+                <div className="history-icon">
+                  {thumbnail
+                    ? <img src={thumbnail} alt="" className="history-thumbnail" />
+                    : <span>&#127916;</span>}
+                </div>
+                <div className="history-content">
+                  <div className="history-query">{formatVideoTitle(h)}</div>
+                  <div className="history-meta">
+                    <span className="history-video">
+                      {h.yt_source_url ? 'YouTube' : 'Uploaded video'}
+                    </span>
+                    <span className="history-dot">·</span>
+                    <span className="history-video">
+                      {h.message_count} question{h.message_count !== 1 ? 's' : ''}
+                    </span>
+                    <span className="history-dot">·</span>
+                    <span className="history-time">{formatTime(h.last_message_at)}</span>
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
+            )
+          })}
+        </div>
+      )}
+
+      {contextMenu && (
+        <div
+          ref={menuRef}
+          className="history-context-menu"
+          style={{ top: contextMenu.y, left: contextMenu.x }}
+        >
+          <button
+            className="history-context-item history-context-delete"
+            onClick={() => handleDeleteChat(contextMenu.video)}
+          >
+            &#128465; Delete chat
+          </button>
         </div>
       )}
     </div>

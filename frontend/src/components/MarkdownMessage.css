@@ -70,3 +70,39 @@
 [data-theme="dark"] .markdown-message pre {
   background-color: rgba(255, 255, 255, 0.08);
 }
+
+.md-timestamp {
+  display: inline-block;
+  background: var(--accent-light);
+  color: var(--accent);
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 1px 7px 2px;
+  font-size: 0.82em;
+  font-weight: 500;
+  line-height: 1.6;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+  vertical-align: middle;
+  position: relative;
+  top: -0.5px;
+}
+
+.md-timestamp:hover {
+  background: rgba(99, 102, 241, 0.2);
+  color: var(--accent-hover);
+}
+
+.md-timestamp:active {
+  background: rgba(99, 102, 241, 0.28);
+}
+
+[data-theme="dark"] .md-timestamp {
+  background: rgba(99, 102, 241, 0.18);
+  color: #a5b4fc;
+}
+
+[data-theme="dark"] .md-timestamp:hover {
+  background: rgba(99, 102, 241, 0.28);
+  color: #c7d2fe;
+}
