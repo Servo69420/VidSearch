@@ -144,7 +144,7 @@ The table below lists every mandatory coursework requirement and its implementat
 | 4 | Composition / Aggregation | Done | `AuthService` owns `PasswordHasher` + `TokenManager` |
 | 5 | At least 1 design pattern | Done | Factory Method — `User.from_db_row()` |
 | 6 | File I/O (read and write) | Done | CSV export (3 classes), TXT URL import |
-| 7 | Unit tests (`unittest`) | Done | 11 test modules, 60+ individual test cases |
+| 7 | Unit tests (`unittest`) | Done | 11 test modules, 100+ individual test cases |
 | 8 | This report (Markdown) | Done | `REPORT.md` |
 
 ---
@@ -376,7 +376,7 @@ class TokenCleanupTask(BackgroundTask):
 `TranscriberFactory` (see §2.8) returns either a `YouTubeTranscriber` or a `VideoFileTranscriber`. Both are called identically through the `BaseTranscriber` interface:
 
 ```python
-transcriber: BaseTranscriber = TranscriberFactory.create(source)
+transcriber: BaseTranscriber = TranscriberFactory.get_transcriber(source)
 result = await transcriber.transcribe(source, db)
 ```
 
@@ -384,22 +384,26 @@ The method dispatched depends on the concrete type at runtime — calling `trans
 
 #### Same interface, different CSV output — Exporters
 
-```python
-def _stream_csv(exporter: BaseCSVExporter, records, prefix: str):
-    content = exporter.export(records)          # polymorphic call
-    return StreamingResponse(
-        iter([content]),
-        media_type="text/csv",
-        headers={"Content-Disposition": f"attachment; filename={exporter.filename(prefix)}"},
-    )
+The three CSV-export endpoints in `app/routers/admin.py` all follow the same shape — only the concrete exporter type changes:
 
-# Three different concrete types — same calling code:
-_stream_csv(StatsExporter(), stats_rows, "vidsearch_stats")
-_stream_csv(TranscriptionsExporter(), transcript_rows, "vidsearch_transcriptions")
-_stream_csv(VideosExporter(), video_rows, "vidsearch_videos")
+```python
+# /admin/stats/export.csv
+exporter = StatsExporter()
+content = exporter.export(rows)
+return StreamingResponse(iter([content]), media_type="text/csv", headers={...})
+
+# /admin/transcriptions/export.csv
+exporter = TranscriptionsExporter()
+content = exporter.export(rows)
+return StreamingResponse(iter([content]), media_type="text/csv", headers={...})
+
+# /admin/videos/export.csv
+exporter = VideosExporter()
+content = exporter.export(rows)
+return StreamingResponse(iter([content]), media_type="text/csv", headers={...})
 ```
 
-Each call to `exporter.export()` produces a CSV with different columns and computed values, without the caller needing to know the concrete type.
+The same `exporter.export(rows)` call dispatches to three different `row()` and `fieldnames` implementations at runtime, producing CSVs with different columns and derived values — without the surrounding endpoint code needing to know the concrete type.
 
 ---
 
@@ -432,18 +436,21 @@ class AuthService(BaseAuthService):
 
 **Factory Method** defines an interface for creating objects, letting a factory decide which concrete class to instantiate. This decouples object creation from usage.
 
-`TranscriberFactory` in `app/transcription.py` examines the `source` string and returns the appropriate concrete transcriber:
+`TranscriberFactory` in `app/transcription.py` examines the `source` string and returns the appropriate concrete transcriber. It caches one instance of each subclass at class level, so the factory never re-creates objects:
 
 ```python
 class TranscriberFactory:
-    @staticmethod
-    def create(source: str) -> BaseTranscriber:
-        if source.startswith(("http://", "https://", "youtu")):
-            return YouTubeTranscriber()
-        return VideoFileTranscriber()
+    _yt = YouTubeTranscriber()
+    _video = VideoFileTranscriber()
+
+    @classmethod
+    def get_transcriber(cls, source: str) -> BaseTranscriber:
+        if extract_video_id(source):
+            return cls._yt
+        return cls._video
 ```
 
-The router calls only `TranscriberFactory.create(source)` and then `transcriber.transcribe(source, db)`. Adding a third transcription strategy in the future (e.g., an audio-only file) requires only a new subclass and one extra branch in `create()` — no changes to any router code.
+The dispatch uses `extract_video_id()` rather than a string-prefix check, which means the factory also handles bare YouTube IDs (e.g. `"dQw4w9WgXcQ"`) — a case verified in `tests/test_transcription.py`. The router calls only `TranscriberFactory.get_transcriber(source)` and then `transcriber.transcribe(source, db)`. Adding a third transcription strategy in the future (e.g., an audio-only file) requires only a new subclass and one extra branch in `get_transcriber()` — no changes to any router code.
 
 The `User.from_db_row()` classmethod is a second Factory Method: it constructs a fully-typed `User` object from a raw `asyncpg` database record, centralising the mapping logic in one place:
 
@@ -586,11 +593,11 @@ class TestUserEncapsulation(unittest.TestCase):
 ```python
 class TestTranscriberFactory(unittest.TestCase):
     def test_youtube_url_returns_youtube_transcriber(self):
-        t = TranscriberFactory.create("https://www.youtube.com/watch?v=abc")
+        t = TranscriberFactory.get_transcriber("https://www.youtube.com/watch?v=abc")
         self.assertIsInstance(t, YouTubeTranscriber)
 
     def test_file_path_returns_video_file_transcriber(self):
-        t = TranscriberFactory.create("/tmp/lecture.mp4")
+        t = TranscriberFactory.get_transcriber("/tmp/lecture.mp4")
         self.assertIsInstance(t, VideoFileTranscriber)
 ```
 
@@ -627,19 +634,7 @@ Additional style conventions followed throughout the codebase:
 
 - **OOP is applied meaningfully, not artificially.** Each OOP mechanism solves a real design problem: encapsulation protects user state from mutation; the Factory Method eliminates `if/else` branching in the router; the CSV exporter hierarchy allows three different export formats to share the same writing algorithm.
 
-- **The test suite is self-contained.** Heavy external dependencies (OpenAI Whisper, the OpenRouter API) are mocked at the module level, so all 60+ tests run without network access or GPU hardware.
-
-- **The main challenge was asynchronous architecture.** FastAPI's `async`/`await` model is not directly compatible with Python's synchronous `unittest`. Tests that exercise async logic use `unittest.IsolatedAsyncioTestCase` and `asyncio.run()`, while blocking I/O (Whisper inference, FFmpeg) is offloaded using `asyncio.to_thread()` to avoid blocking the event loop.
-
-- **Integrating vector search required extending the standard PostgreSQL setup.** The `pgvector` extension must be installed alongside the database, and embedding dimensions (1024 by default) must be consistent between insertion and retrieval. This added operational complexity beyond a typical web application.
-
-## 3. Results
-
-- **All seven functional code requirements were implemented.** The application is fully working: users can register, upload or link videos, receive transcriptions, and chat with an AI about the video content using RAG-based context retrieval.
-
-- **OOP is applied meaningfully, not artificially.** Each OOP mechanism solves a real design problem: encapsulation protects user state from mutation; the Factory Method eliminates `if/else` branching in the router; the CSV exporter hierarchy allows three different export formats to share the same writing algorithm.
-
-- **The test suite is self-contained.** Heavy external dependencies (OpenAI Whisper, the OpenRouter API) are mocked at the module level, so all 60+ tests run without network access or GPU hardware.
+- **The test suite is self-contained.** Heavy external dependencies (OpenAI Whisper, the OpenRouter API) are mocked at the module level, so all 100+ tests run without network access or GPU hardware.
 
 - **The main challenge was asynchronous architecture.** FastAPI's `async`/`await` model is not directly compatible with Python's synchronous `unittest`. Tests that exercise async logic use `unittest.IsolatedAsyncioTestCase` and `asyncio.run()`, while blocking I/O (Whisper inference, FFmpeg) is offloaded using `asyncio.to_thread()` to avoid blocking the event loop.
 
@@ -655,7 +650,7 @@ Additional style conventions followed throughout the codebase:
 
 VidSearch demonstrates that all four OOP pillars can be applied naturally in a real-world Python web application. Encapsulation keeps domain models safe from external mutation; abstraction defines clean contracts that isolate the chat router from transcription implementation details; inheritance shares common behaviour across multiple exporter and task classes; and polymorphism allows a single code path to handle YouTube videos and uploaded files identically.
 
-The Factory Method pattern proved particularly valuable: as transcription sources may expand in the future, only `TranscriberFactory.create()` needs to change — no router code is touched. This made the application easier to extend and helped keep the router cleaner.
+The Factory Method pattern proved particularly valuable: as transcription sources may expand in the future, only `TranscriberFactory.get_transcriber()` needs to change — no router code is touched. This made the application easier to extend and helped keep the router cleaner.
 
 The project also showed that building an AI-based application is not only about writing Python code. A large part of the work involved integrating different services, managing dependencies, handling asynchronous logic, and making sure that experimental changes did not break the working version of the application. Working in a team repository also made Git workflow more important, because unfinished features had to be separated from stable code.
 
@@ -692,7 +687,7 @@ The project also showed that building an AI-based application is not only about 
 | [OpenAI Whisper](https://platform.openai.com/docs/guides/speech-to-text) | Speech-to-text transcription |
 | [YouTube Transcript API](https://pypi.org/project/youtube-transcript-api/) | YouTube caption retrieval |
 | [OpenRouter](https://openrouter.ai/docs) | Unified API for multiple LLM providers |
-| [PyJWT](https://pyjwp.readthedocs.io/) | JSON Web Token implementation |
+| [PyJWT](https://pyjwt.readthedocs.io/) | JSON Web Token implementation |
 | [bcrypt](https://pypi.org/project/bcrypt/) | Password hashing |
 | [PEP 8 — Style Guide for Python Code](https://peps.python.org/pep-0008/) | Code style standard |
 | [Python `abc` module](https://docs.python.org/3/library/abc.html) | Abstract base classes |
