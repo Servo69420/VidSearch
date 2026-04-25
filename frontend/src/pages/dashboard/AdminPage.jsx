@@ -24,6 +24,9 @@ export default function AdminPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [exporting, setExporting] = useState(null)
+  const [importing, setImporting] = useState(false)
+  const [suggestedUrls, setSuggestedUrls] = useState(null)
+  const [importFileName, setImportFileName] = useState('')
 
   useEffect(() => {
     if (user && !user.is_admin) {
@@ -71,6 +74,33 @@ export default function AdminPage() {
       setError(e.message)
     } finally {
       setExporting(null)
+    }
+  }
+
+  async function handleImportTxt(event) {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+    setImporting(true)
+    setError('')
+    setImportFileName(file.name)
+    const token = localStorage.getItem('auth_token')
+    try {
+      const form = new FormData()
+      form.append('file', file)
+      const res = await fetch(`${API_BASE}/admin/urls/import`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: form,
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.detail || 'Import failed.')
+      setSuggestedUrls(data.urls || [])
+    } catch (e) {
+      setSuggestedUrls(null)
+      setError(e.message)
+    } finally {
+      setImporting(false)
     }
   }
 
@@ -202,6 +232,46 @@ export default function AdminPage() {
                 </p>
               </div>
             </div>
+          </div>
+
+          <div className="adm-section adm-suggested">
+            <div className="adm-suggested-head">
+              <div>
+                <h4>Suggested videos to add to library</h4>
+                <p className="adm-suggested-hint">
+                  Upload a .txt file with one YouTube URL per line. Lines starting with <code>#</code> are ignored.
+                </p>
+              </div>
+              <label className="adm-export-btn">
+                {importing ? 'Importing…' : 'Import .txt'}
+                <input
+                  type="file"
+                  accept=".txt,text/plain"
+                  onChange={handleImportTxt}
+                  disabled={importing}
+                  style={{ display: 'none' }}
+                />
+              </label>
+            </div>
+
+            {suggestedUrls && (
+              suggestedUrls.length === 0 ? (
+                <p className="adm-suggested-empty">No URLs found in {importFileName}.</p>
+              ) : (
+                <>
+                  <p className="adm-suggested-meta">
+                    {suggestedUrls.length} URL{suggestedUrls.length === 1 ? '' : 's'} parsed from <strong>{importFileName}</strong>
+                  </p>
+                  <ol className="adm-suggested-list">
+                    {suggestedUrls.map((u, i) => (
+                      <li key={`${u}-${i}`}>
+                        <a href={u} target="_blank" rel="noreferrer">{u}</a>
+                      </li>
+                    ))}
+                  </ol>
+                </>
+              )
+            )}
           </div>
         </>
       )}
