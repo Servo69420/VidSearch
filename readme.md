@@ -45,136 +45,19 @@ docker compose up -d
 - PostgreSQL available at `localhost:5432`
 - pgAdmin UI at `http://localhost:5050`
 
-The schema is applied automatically on first run. Skip to [Backend](#backend).
+The schema is applied automatically **on first run only** (i.e. when the named volume is created). Skip to [Backend](#backend).
 
----
+> **Picking up schema changes:** `docker compose up` against an existing volume will not re-run `schema.sql`. To apply a new schema, wipe the volume and recreate:
+>
+> ```bash
+> docker compose down -v          # ⚠️ deletes all local DB data
+> docker compose up -d --build    # schema.sql runs again on first boot
+>
 
-### Option B — Windows + Conda (manual)
-
-If you installed PostgreSQL into a conda env (e.g. `VidSearchpy12`):
 
 ```powershell
 # 1. Activate the env
 conda activate VidSearchpy12
-
-# 2. Install pgvector into the same env (must match the env's Postgres version)
-conda install -c conda-forge pgvector
-
-# 3. Start the Postgres server
-& "$env:CONDA_PREFIX\Library\bin\pg_ctl.exe" `
-    -D "$env:CONDA_PREFIX\var\postgresql" `
-    -l "$env:CONDA_PREFIX\var\postgresql\server.log" start
-
-# 4. Enable the pgvector extension
-& "$env:CONDA_PREFIX\Library\bin\psql.exe" -h 127.0.0.1 -p 5433 -U <your-username> -d vidsearch `
-    -c "CREATE EXTENSION IF NOT EXISTS vector;"
-
-# 5. Apply the schema
-& "$env:CONDA_PREFIX\Library\bin\psql.exe" -h 127.0.0.1 -p 5433 -U <your-username> -d vidsearch `
-    -f .\backend\schema.sql
-```
-
-> Replace `-p 5433` and `<your-username>` with the values from your `DATABASE_URL` in `backend/.env`.
-> Conda-based Postgres often runs on port **5433** to avoid conflicting with a system-wide Postgres install on 5432.
-
-**Verify the install:**
-
-```powershell
-& "$env:CONDA_PREFIX\Library\bin\psql.exe" -h 127.0.0.1 -p 5433 -U <your-username> -d vidsearch -c "\dx vector"
-& "$env:CONDA_PREFIX\Library\bin\psql.exe" -h 127.0.0.1 -p 5433 -U <your-username> -d vidsearch -c "\d transcript_chunks"
-```
-
-You should see the `vector` extension and a `transcript_chunks` table with `embedding vector(1024)` columns.
-
----
-
-### Option C — Ubuntu / Debian (manual)
-
-```bash
-sudo apt update
-sudo apt install postgresql postgresql-contrib postgresql-16-pgvector
-sudo systemctl start postgresql
-sudo systemctl enable postgresql
-```
-
-Create the database and apply the schema:
-
-```bash
-sudo -u postgres psql -c "CREATE DATABASE vidsearch;"
-sudo -u postgres psql -d vidsearch -c "CREATE EXTENSION IF NOT EXISTS vector;"
-sudo -u postgres psql -d vidsearch -f backend/schema.sql
-```
-
----
-
-### Option D — Windows native Postgres (EDB installer)
-
-pgvector isn't bundled with the EDB installer — build it with MSVC:
-
-```powershell
-# Open "x64 Native Tools Command Prompt for VS 2022", then:
-set "PGROOT=C:\Program Files\PostgreSQL\16"
-git clone --branch v0.7.4 https://github.com/pgvector/pgvector.git
-cd pgvector
-nmake /F Makefile.win
-nmake /F Makefile.win install
-```
-
-Then in psql connected to `vidsearch`:
-
-```sql
-CREATE EXTENSION IF NOT EXISTS vector;
-```
-
-Apply the schema:
-
-```powershell
-& "C:\Program Files\PostgreSQL\16\bin\psql.exe" -U postgres -d vidsearch -f .\backend\schema.sql
-```
-
----
-
-### Verify tables were created
-
-```bash
-psql -d vidsearch -c "\dt"
-```
-
-You should see: `users`, `user_hobbies`, `yt_videos`, `user_videos`, `transcriptions`, `transcript_chunks`, `chat_history`, and `token_blacklist`.
-
----
-
-### Troubleshooting PostgreSQL
-
-| Error | Fix |
-|---|---|
-| `Peer authentication failed for user "postgres"` | Use `sudo -u postgres psql` or connect via TCP: `psql -U postgres -h 127.0.0.1 -W` |
-| `role "postgres" does not exist` | `sudo -u postgres createuser --superuser postgres` |
-| `database "vidsearch" does not exist` | `sudo -u postgres psql -c "CREATE DATABASE vidsearch;"` |
-| `relation "users" does not exist` | Apply the schema: `psql -d vidsearch -f backend/schema.sql` |
-| `column "X" does not exist` | Your schema is outdated — see "Updating an existing database" below |
-
----
-
-### Updating an existing database
-
-If you have an older `users` table missing recent columns:
-
-```sql
-\c vidsearch
-
-ALTER TABLE users ADD COLUMN IF NOT EXISTS name TEXT DEFAULT '';
-ALTER TABLE users ADD COLUMN IF NOT EXISTS surname TEXT DEFAULT '';
-ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT DEFAULT '';
-ALTER TABLE users ADD COLUMN IF NOT EXISTS subscription TEXT DEFAULT 'free';
-ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN DEFAULT FALSE;
-
-CREATE TABLE IF NOT EXISTS user_hobbies (
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    hobby   TEXT NOT NULL,
-    PRIMARY KEY (user_id, hobby)
-);
-```
 
 ### Migrating an existing DB to the current schema
 
@@ -233,7 +116,7 @@ Edit `backend/.env` — you **must** set a real `JWT_SECRET`:
 python3 -c "import secrets; print(secrets.token_hex(32))"
 ```
 
-Paste the output as `JWT_SECRET=<generated-value>`. Also update `DATABASE_URL` and `OPENROUTER_API_KEY`.
+Paste the output as `JWT_SECRET=<generated-value>`. Also update `DATABASE_URL`, `OPENROUTER_API_KEY`, and `OPENAI_API_KEY`.
 
 ```bash
 # 2. Install dependencies
@@ -244,7 +127,7 @@ pip install -r requirements.txt
 uvicorn main:app --reload
 ```
 
-API at `http://localhost:8000`  
+API at `http://localhost:8000`
 Interactive docs at `http://localhost:8000/docs`
 
 ---
@@ -271,7 +154,8 @@ Copy `backend/.env.example` to `backend/.env` and fill in:
 | `JWT_SECRET` | Long random string for signing tokens — **do not use the default** |
 | `JWT_ALGORITHM` | Signing algorithm (default: `HS256`) |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | How long login tokens last (default: `30`) |
-| `OPENROUTER_API_KEY` | API key for AI chat responses via OpenRouter |
+| `OPENROUTER_API_KEY` | API key for AI chat + embeddings + summarization (OpenRouter) |
+| `OPENAI_API_KEY` | API key for Whisper transcription of uploaded videos |
 
 ---
 
@@ -284,24 +168,6 @@ Copy `backend/.env.example` to `backend/.env` and fill in:
 5. Log out, then log back in with your credentials
 
 You can also test the API directly:
-
-```bash
-# Register
-curl -X POST http://localhost:8000/auth/register \
-  -H "Content-Type: application/json" \
-  -d '{"username":"testuser","password":"test1234"}'
-
-# Login
-curl -X POST http://localhost:8000/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"username":"testuser","password":"test1234"}'
-
-# Get profile (replace <token> with the access_token from login response)
-curl http://localhost:8000/auth/me \
-  -H "Authorization: Bearer <token>"
-```
-
----
 
 ## Architecture & Diagrams
 
@@ -445,87 +311,92 @@ erDiagram
 
 ```mermaid
 classDiagram
-    class BaseVideo {
+    class BaseTranscriber {
         <<abstract>>
-        +str id
-        +str title
-        +datetime created_at
-        +get_source() str
-        +get_transcription_strategy() TranscriptionStrategy
+        +transcribe(source, db) dict
+    }
+    class YouTubeTranscriber {
+        +transcribe(source, db) dict
+    }
+    class VideoFileTranscriber {
+        +transcribe(source, db, user_video_id) dict
+    }
+    class TranscriberFactory {
+        -_yt YouTubeTranscriber
+        -_video VideoFileTranscriber
+        +get_transcriber(source) BaseTranscriber
     }
 
-    class YouTubeVideo {
-        +str youtube_url
-        +get_source() str
-        +get_transcription_strategy() TranscriptionStrategy
-    }
-
-    class UploadedVideo {
-        +str file_path
-        +str file_hash
-        +str original_filename
-        +get_source() str
-        +get_transcription_strategy() TranscriptionStrategy
-    }
-
-    class TranscriptionStrategy {
+    class BaseAuthService {
         <<abstract>>
-        +transcribe(video BaseVideo) Transcription
+        +register(...) dict
+        +authenticate(username, password, db) str
+        +get_current_user(token, db) dict
+    }
+    class AuthService {
+        -_hasher PasswordHasher
+        -_tokens TokenManager
+        +register(...) dict
+        +authenticate(...) str
+        +logout(token, db) dict
+    }
+    class PasswordHasher {
+        +hash(password) str
+        +verify(password, hashed) bool
+    }
+    class TokenManager {
+        +create(user_id, username) str
+        +decode(token) dict
+        +blacklist(token, payload, db)
     }
 
-    class WhisperStrategy {
-        +transcribe(video BaseVideo) Transcription
+    class BaseCSVExporter {
+        <<abstract>>
+        +fieldnames list
+        +row(record) list
+        +export(records) str
+    }
+    class StatsExporter
+    class TranscriptionsExporter
+    class VideosExporter
+    class TXTURLImporter {
+        +parse(content) list~str~
     }
 
-    class YouTubeAPIStrategy {
-        +transcribe(video BaseVideo) Transcription
+    class BackgroundTask {
+        <<abstract>>
+        -_interval int
+        +execute()
+        +run_forever()
     }
-
-    class Transcription {
-        +str id
-        +str full_text
-        +list segments
-        +str status
-        +str language
-        -list _chunks
-        +add_chunk(chunk TranscriptChunk)
-        +get_chunks() list
-    }
-
-    class TranscriptChunk {
-        +str id
-        +int idx
-        +int level
-        +float start_s
-        +float end_s
-        +str text
-        +str summary
-        +list embedding
-    }
-
-    class VideoFactory {
-        <<static>>
-        +create(source_type str, data dict) BaseVideo
+    class TokenCleanupTask {
+        +execute()
     }
 
     class User {
-        +str id
-        +str username
-        +str email
-        -str _password_hash
-        +list hobbies
-        +set_password(raw str)
-        +verify_password(raw str) bool
+        -_id str
+        -_username str
+        -_hobbies list
+        +id str
+        +username str
+        +hobbies list
+        +from_db_row(row) User$
+        +to_dict() dict
     }
 
-    BaseVideo <|-- YouTubeVideo : extends
-    BaseVideo <|-- UploadedVideo : extends
-    TranscriptionStrategy <|-- WhisperStrategy : extends
-    TranscriptionStrategy <|-- YouTubeAPIStrategy : extends
-    BaseVideo --> TranscriptionStrategy : uses
-    Transcription "1" *-- "many" TranscriptChunk : composition
-    User "1" o-- "many" BaseVideo : aggregation
-    VideoFactory ..> BaseVideo : creates
+    BaseTranscriber <|-- YouTubeTranscriber
+    BaseTranscriber <|-- VideoFileTranscriber
+    TranscriberFactory ..> BaseTranscriber : creates
+
+    BaseAuthService <|-- AuthService
+    AuthService *-- PasswordHasher : composition
+    AuthService *-- TokenManager : composition
+
+    BaseCSVExporter <|-- StatsExporter
+    BaseCSVExporter <|-- TranscriptionsExporter
+    BaseCSVExporter <|-- VideosExporter
+
+    BackgroundTask <|-- TokenCleanupTask
 ```
 
 ---
@@ -546,7 +417,8 @@ sequenceDiagram
     BE->>DB: Insert yt_videos / user_videos row
     BE->>EXT: Transcribe audio / fetch transcript
     EXT-->>BE: Segments + full text
-    BE->>DB: Insert transcriptions row (status=ready)
+    BE->>DB: Insert transcriptions row (status=pending)
+    Note over BE,DB: RAG pipeline: chunking → summarizing → ready
     BE->>DB: Insert transcript_chunks with embeddings
     BE-->>FE: transcription_id + status
     FE-->>U: Show transcript
