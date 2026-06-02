@@ -87,7 +87,7 @@ class TestRunChatLoop(unittest.IsolatedAsyncioTestCase):
     async def test_round2_failure_keeps_round1_content(self):
         tool_calls = [_tc("c1", "mute_video")]
 
-        async def _side_effect(messages, tool_choice="auto", model=None):
+        async def _side_effect(messages, tool_choice="auto", model=None, reasoning_effort=None):
             if tool_choice == "none":
                 raise HTTPException(status_code=502, detail="x")
             return _oai("Muting the video.", tool_calls)
@@ -100,7 +100,7 @@ class TestRunChatLoop(unittest.IsolatedAsyncioTestCase):
     async def test_round2_timeout_keeps_round1_content(self):
         tool_calls = [_tc("c1", "play_video")]
 
-        async def _side_effect(messages, tool_choice="auto", model=None):
+        async def _side_effect(messages, tool_choice="auto", model=None, reasoning_effort=None):
             if tool_choice == "none":
                 raise httpx.TimeoutException("timeout")
             return _oai("Starting playback.", tool_calls)

@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import re
@@ -7,7 +8,7 @@ from pydantic import BaseModel
 from app.config import settings
 from fastapi import APIRouter, HTTPException, Depends
 from app.dependencies import get_current_user
-from app.database import get_db
+from app.database import get_db, get_pool
 from app.routers.context import get_transcript, search_video_context, fetch_chunks_at_time
 from app.routers.video_player_tools import VIDEO_PLAYER_TOOLS
 from app.youtube import normalize_youtube_ref, resolve_or_create_yt_video
@@ -16,12 +17,32 @@ from app.model_config import MODEL_CONFIG
 
 CHAT_MODEL = MODEL_CONFIG.chat_model
 VISION_MODEL = MODEL_CONFIG.vision_model
+VISION_DESCRIPTION_MODEL = MODEL_CONFIG.vision_description_model
 EMBEDDING_MODEL = MODEL_CONFIG.embedding_model
 PHASE2_SUMMARY_MODEL = MODEL_CONFIG.phase2_summary_model
 RETRIEVAL_TOP_K = MODEL_CONFIG.rag_retrieval_top_k
+REASONING_EFFORT_CHAT = MODEL_CONFIG.reasoning_effort_chat
+REASONING_EFFORT_VISION = MODEL_CONFIG.reasoning_effort_vision
+FRAME_CACHE_BUCKET_S = MODEL_CONFIG.frame_cache_bucket_s
 
 OPENROUTER_CHAT_ENDPOINT = "https://openrouter.ai/api/v1/chat/completions"
 OPENROUTER_TIMEOUT_S = 60.0
+
+# Prompt for the cheap, question-agnostic frame description that backs the
+# frame-analysis cache.
+FRAME_DESCRIBE_PROMPT = (
+    "Describe everything visible in this video frame in compact, factual prose. "
+    "Cover: any text shown (transcribe verbatim), mathematical expressions or "
+    "equations (transcribe in LaTeX), diagrams, charts, objects, people, and "
+    "their spatial layout. Be concrete enough that another assistant could "
+    "answer questions about the frame without seeing the image. ~120 words."
+)
+
+# Strong references to in-flight background tasks. asyncio only keeps a weak
+# reference to a task, so a fire-and-forget create_task() can be garbage
+# collected mid-run — which would silently stop the frame description from ever
+# persisting. Hold the reference until the task completes.
+_BACKGROUND_TASKS: set = set()
 
 SYSTEM_PROMPT = (
     "You are a helpful assistant that answers questions about the content "
@@ -101,6 +122,7 @@ async def _call_openrouter(
     *,
     tool_choice: str = "auto",
     model: str | None = None,
+    reasoning_effort: str | None = None,
 ) -> dict:
     body: dict = {
         "model": model or CHAT_MODEL,
@@ -109,6 +131,11 @@ async def _call_openrouter(
     if tool_choice != "none":
         body["tools"] = VIDEO_PLAYER_TOOLS
         body["tool_choice"] = tool_choice
+    # OpenRouter normalises this across providers and silently ignores it for
+    # models that don't expose reasoning (e.g. Gemma). Trims billed reasoning
+    # tokens on models that do.
+    if reasoning_effort:
+        body["reasoning"] = {"effort": reasoning_effort}
     async with httpx.AsyncClient() as client:
         result = await client.post(
             OPENROUTER_CHAT_ENDPOINT,
@@ -203,8 +230,11 @@ async def _run_chat_loop(
     openai_messages: list[dict],
     *,
     model: str | None = None,
+    reasoning_effort: str | None = None,
 ) -> tuple[str, list[dict]]:
-    data_1 = await _call_openrouter(openai_messages, model=model)
+    data_1 = await _call_openrouter(
+        openai_messages, model=model, reasoning_effort=reasoning_effort
+    )
     msg_1 = data_1["choices"][0]["message"]
     round1_content = msg_1.get("content") or ""
     round1_tool_calls = msg_1.get("tool_calls") or []
@@ -230,7 +260,10 @@ async def _run_chat_loop(
         )
         try:
             data_2 = await _call_openrouter(
-                followup_messages, tool_choice="none", model=model
+                followup_messages,
+                tool_choice="none",
+                model=model,
+                reasoning_effort=reasoning_effort,
             )
             msg_2 = data_2["choices"][0]["message"]
             round2_content = msg_2.get("content") or ""
@@ -252,6 +285,127 @@ async def _run_chat_loop(
         final_content = _tool_call_fallback_text(final_tool_calls)
 
     return final_content, final_tool_calls
+
+
+async def _get_or_create_frame_capture(
+    user_id: str, video_key: str, timestamp_s: float, db
+) -> dict | None:
+    """Find (or create) the frame_captures row near this timestamp.
+
+    Returns {"id", "analysis"}: ``analysis`` is the cached description if one
+    has already been generated, else ``None`` (a fresh row was created and is
+    awaiting a background description). Best-effort: any DB failure returns
+    ``None`` so the chat path is never blocked by the cache.
+    """
+    try:
+        row = await db.fetchrow(
+            """SELECT id, analysis
+               FROM frame_captures
+               WHERE user_id = $1::uuid
+                 AND video_key = $2
+                 AND abs(timestamp_s - $3) <= $4
+               ORDER BY abs(timestamp_s - $3) ASC, created_at DESC
+               LIMIT 1""",
+            user_id,
+            video_key,
+            timestamp_s,
+            FRAME_CACHE_BUCKET_S,
+        )
+        if row:
+            await db.execute(
+                """UPDATE frame_captures
+                      SET ask_count = ask_count + 1, last_asked_at = now()
+                    WHERE id = $1""",
+                row["id"],
+            )
+            return {"id": row["id"], "analysis": row["analysis"]}
+        new_id = await db.fetchval(
+            """INSERT INTO frame_captures
+                   (user_id, video_key, timestamp_s, ask_count, last_asked_at)
+               VALUES ($1::uuid, $2, $3, 1, now())
+               RETURNING id""",
+            user_id,
+            video_key,
+            timestamp_s,
+        )
+        return {"id": new_id, "analysis": None}
+    except Exception:
+        logger.exception("Frame-capture lookup/create failed")
+        return None
+
+
+async def _describe_frame(frame_b64: str) -> str | None:
+    """Run a cheap, question-agnostic vision call to describe a frame."""
+    try:
+        data = await _call_openrouter(
+            [
+                {"role": "system", "content": FRAME_DESCRIBE_PROMPT},
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "Describe this frame."},
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/jpeg;base64,{frame_b64}"
+                            },
+                        },
+                    ],
+                },
+            ],
+            tool_choice="none",
+            model=VISION_DESCRIPTION_MODEL,
+            reasoning_effort="low",
+        )
+    except (HTTPException, httpx.TimeoutException):
+        logger.exception("Frame-description vision call failed")
+        return None
+    try:
+        return (data["choices"][0]["message"].get("content") or "").strip() or None
+    except (KeyError, IndexError, AttributeError):
+        return None
+
+
+async def _persist_frame_analysis(
+    frame_id, analysis: str, model_name: str, db
+) -> None:
+    try:
+        await db.execute(
+            """UPDATE frame_captures
+                  SET analysis = $1, analysis_model = $2, analyzed_at = now()
+                WHERE id = $3""",
+            analysis,
+            model_name,
+            frame_id,
+        )
+    except Exception:
+        logger.exception("Failed to persist frame analysis for id=%s", frame_id)
+
+
+async def _describe_and_persist_background(frame_id, frame_b64: str) -> None:
+    """Describe a frame and persist it, off the request path.
+
+    Acquires its own pooled connection so it outlives the request. Best-effort:
+    any failure is logged, never raised. Populating ``analysis`` here is what
+    lets the *next* question about this frame skip the vision call entirely.
+    """
+    try:
+        description = await _describe_frame(frame_b64)
+    except Exception:
+        logger.exception("Background frame description call failed")
+        return
+    if not description:
+        return
+    try:
+        pool = get_pool()
+        async with pool.acquire() as conn:
+            await _persist_frame_analysis(
+                frame_id, description, VISION_DESCRIPTION_MODEL, conn
+            )
+    except Exception:
+        logger.exception(
+            "Background frame description persist failed (frame_id=%s)", frame_id
+        )
 
 
 @router.post("/ask")
@@ -380,6 +534,30 @@ async def ask(
             ),
         })
 
+    # Frame cost-saving cache: if this frame (same user, video, ~timestamp) has
+    # already been described, answer from the cached text with the cheap chat
+    # model instead of re-sending the image to the vision model.
+    video_key = video_id or user_video_id
+    frame_cache: dict | None = None
+    use_frame_image = bool(request.frame_base64)
+    if request.frame_base64 and request.current_time_s is not None and video_key:
+        frame_cache = await _get_or_create_frame_capture(
+            user_id, video_key, request.current_time_s, db
+        )
+        if frame_cache and frame_cache.get("analysis"):
+            use_frame_image = False
+            openai_messages.append({
+                "role": "system",
+                "content": (
+                    "A description of the video frame the user is looking at "
+                    f"(around {_format_seconds(request.current_time_s)}) is "
+                    "provided below. Use it to answer questions about the frame "
+                    "— you do not need the image itself.\n\n"
+                    f"--- FRAME DESCRIPTION ---\n{frame_cache['analysis']}\n"
+                    "--- END FRAME DESCRIPTION ---"
+                ),
+            })
+
     valid_msgs = [
         msg for msg in request.message
         if msg.get("role") in {"user", "assistant"} and isinstance(msg.get("content"), str)
@@ -393,7 +571,7 @@ async def ask(
                 f"<attached_file>\n{request.txt_context}\n</attached_file>\n\n"
                 + msg_content
             )
-        if is_last_user and request.frame_base64:
+        if is_last_user and use_frame_image:
             openai_messages.append({
                 "role": "user",
                 "content": [
@@ -409,11 +587,14 @@ async def ask(
         else:
             openai_messages.append({"role": msg["role"], "content": msg_content})
 
-    active_model = VISION_MODEL if request.frame_base64 else None
+    active_model = VISION_MODEL if use_frame_image else None
+    reasoning_effort = (
+        REASONING_EFFORT_VISION if use_frame_image else REASONING_EFFORT_CHAT
+    )
 
     try:
         final_content, final_tool_calls = await _run_chat_loop(
-            openai_messages, model=active_model
+            openai_messages, model=active_model, reasoning_effort=reasoning_effort
         )
     except httpx.TimeoutException:
         logger.error("OpenRouter chat request timed out")
@@ -421,6 +602,24 @@ async def ask(
             status_code=504,
             detail="Request to AI provider timed out.",
         )
+
+    # First time we've seen this frame: we answered from the image this turn, so
+    # kick off a cheap background description. That populates `analysis` so the
+    # NEXT question about this frame skips the vision call. Fire-and-forget — it
+    # must never block or fail the response.
+    if (
+        use_frame_image
+        and frame_cache
+        and not frame_cache.get("analysis")
+        and request.frame_base64
+    ):
+        task = asyncio.create_task(
+            _describe_and_persist_background(
+                frame_cache["id"], request.frame_base64
+            )
+        )
+        _BACKGROUND_TASKS.add(task)
+        task.add_done_callback(_BACKGROUND_TASKS.discard)
 
     envelope = {
         "choices": [

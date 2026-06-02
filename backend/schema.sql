@@ -120,3 +120,25 @@ CREATE TABLE IF NOT EXISTS chat_history (
         (video_id IS NULL AND user_video_id IS NOT NULL)
     )
 );
+
+-- Cost-saving cache: a reusable, question-agnostic description of a video
+-- frame at a given timestamp. Once `analysis` is populated, later questions
+-- about the same frame are answered from this text by the chat model instead
+-- of re-sending the image to the vision model. `video_key` is the resolved
+-- video identity (yt_videos.id or user_videos.id) stored as text so a single
+-- column covers both sources.
+CREATE TABLE IF NOT EXISTS frame_captures (
+    id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id        UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    video_key      TEXT NOT NULL,
+    timestamp_s    REAL NOT NULL DEFAULT 0,
+    analysis       TEXT,
+    analysis_model TEXT,
+    analyzed_at    TIMESTAMPTZ,
+    ask_count      INT NOT NULL DEFAULT 0,
+    last_asked_at  TIMESTAMPTZ,
+    created_at     TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS frame_captures_user_video_ts_idx
+    ON frame_captures (user_id, video_key, timestamp_s);

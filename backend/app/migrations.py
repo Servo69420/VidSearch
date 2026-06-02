@@ -55,6 +55,39 @@ async def ensure_embedding_dimensions(db) -> None:
     )
 
 
+async def ensure_frame_captures(db) -> None:
+    """Create the frame-analysis cache table (idempotent).
+
+    Brings existing deployments forward without dropping data: the table is
+    created if missing, and the cache columns are added if an older
+    frame_captures table already exists.
+    """
+    await db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS frame_captures (
+            id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            user_id        UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            video_key      TEXT NOT NULL,
+            timestamp_s    REAL NOT NULL DEFAULT 0,
+            analysis       TEXT,
+            analysis_model TEXT,
+            analyzed_at    TIMESTAMPTZ,
+            ask_count      INT NOT NULL DEFAULT 0,
+            last_asked_at  TIMESTAMPTZ,
+            created_at     TIMESTAMPTZ DEFAULT now()
+        );
+        ALTER TABLE frame_captures
+            ADD COLUMN IF NOT EXISTS analysis       TEXT,
+            ADD COLUMN IF NOT EXISTS analysis_model TEXT,
+            ADD COLUMN IF NOT EXISTS analyzed_at    TIMESTAMPTZ,
+            ADD COLUMN IF NOT EXISTS ask_count      INT NOT NULL DEFAULT 0,
+            ADD COLUMN IF NOT EXISTS last_asked_at  TIMESTAMPTZ;
+        CREATE INDEX IF NOT EXISTS frame_captures_user_video_ts_idx
+            ON frame_captures (user_id, video_key, timestamp_s);
+        """
+    )
+
+
 async def ensure_admin_setup(db) -> None:
     """Add is_admin column and create the default admin account."""
     await db.execute(
