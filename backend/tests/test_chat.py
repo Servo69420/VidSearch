@@ -244,6 +244,101 @@ class TestStripToolCallLiterals(unittest.TestCase):
         self.assertEqual(content, "Jumping to 7:08.")
 
 
+class TestStripReasoningTokens(unittest.TestCase):
+    def test_harmony_keeps_only_final_channel(self):
+        text = (
+            "<|channel|>analysis<|message|>The user wants the capital. Let me "
+            "think.<|end|><|start|>assistant<|channel|>final<|message|>"
+            "The capital is Paris."
+        )
+        self.assertEqual(
+            chat_module._strip_reasoning_tokens(text), "The capital is Paris."
+        )
+
+    def test_harmony_without_final_drops_analysis_segment(self):
+        text = (
+            "<|channel|>analysis<|message|>internal musing here<|end|>"
+            "The actual answer."
+        )
+        self.assertEqual(
+            chat_module._strip_reasoning_tokens(text), "The actual answer."
+        )
+
+
+class TestSplitVizRequest(unittest.TestCase):
+    def test_no_tool_calls(self):
+        description, player_calls = chat_module._split_viz_request([])
+        self.assertIsNone(description)
+        self.assertEqual(player_calls, [])
+
+    def test_player_calls_pass_through_without_viz(self):
+        calls = [_tc("c1", "play_video"), _tc("c2", "seek_video")]
+        description, player_calls = chat_module._split_viz_request(calls)
+        self.assertIsNone(description)
+        self.assertEqual(player_calls, calls)
+
+    def test_viz_call_is_extracted_and_stripped(self):
+        viz = _tc(
+            "c1",
+            chat_module.VIZ_TOOL_NAME,
+            '{"description": "a KVL timeline"}',
+        )
+        player = _tc("c2", "pause_video")
+        description, player_calls = chat_module._split_viz_request(
+            [viz, player]
+        )
+        self.assertEqual(description, "a KVL timeline")
+        self.assertEqual(player_calls, [player])
+
+    def test_viz_call_with_bad_arguments_yields_empty_description(self):
+        viz = _tc("c1", chat_module.VIZ_TOOL_NAME, "not json")
+        description, player_calls = chat_module._split_viz_request([viz])
+        self.assertEqual(description, "")
+        self.assertEqual(player_calls, [])
+
+    def test_strips_think_block(self):
+        text = "<think>hmm, let me reason about this</think>The answer is 42."
+        self.assertEqual(
+            chat_module._strip_reasoning_tokens(text), "The answer is 42."
+        )
+
+    def test_strips_thinking_block_case_insensitive(self):
+        text = "<Thinking>secret</Thinking>Visible answer."
+        self.assertEqual(
+            chat_module._strip_reasoning_tokens(text), "Visible answer."
+        )
+
+    def test_strips_malformed_pipe_variants(self):
+        # The exact surface form users reported: missing/misplaced pipes.
+        text = "<|channel>thought goes here<channel|>Real reply."
+        self.assertEqual(
+            chat_module._strip_reasoning_tokens(text), "Real reply."
+        )
+
+    def test_strips_stray_control_tokens(self):
+        text = "<|start|>assistant<|message|>Hello world.<|end|>"
+        self.assertEqual(
+            chat_module._strip_reasoning_tokens(text), "Hello world."
+        )
+
+    def test_leaves_normal_text_unchanged(self):
+        text = "Here is a plain answer with no reasoning tokens."
+        self.assertEqual(chat_module._strip_reasoning_tokens(text), text)
+
+    def test_empty_input_returns_empty(self):
+        self.assertEqual(chat_module._strip_reasoning_tokens(""), "")
+
+    def test_strip_tool_call_literals_also_removes_reasoning(self):
+        text = (
+            "<think>plan the jump</think>"
+            "[ToolCall(func_name='seek_video', parameters={'seconds': 10})] "
+            "Jumping to 0:10."
+        )
+        self.assertEqual(
+            chat_module._strip_tool_call_literals(text), "Jumping to 0:10."
+        )
+
+
 class TestToolCallFallbackText(unittest.TestCase):
     def test_joins_tool_names_with_underscores_replaced(self):
         text = chat_module._tool_call_fallback_text(

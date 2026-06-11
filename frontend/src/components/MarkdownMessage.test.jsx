@@ -125,6 +125,56 @@ describe('MarkdownMessage', () => {
     })
   })
 
+  describe('LaTeX delimiter normalization', () => {
+    it('renders \\(x^2\\) as a KaTeX element', () => {
+      const { container } = render(<MarkdownMessage content={'value \\(x^2\\) here'} />)
+      expect(container.querySelector('.katex')).not.toBeNull()
+    })
+
+    it('renders \\[a+b\\] as a KaTeX display element', () => {
+      const { container } = render(<MarkdownMessage content={'text\n\n\\[a+b\\]\n\nmore'} />)
+      expect(container.querySelector('.katex-display')).not.toBeNull()
+    })
+  })
+
+  describe('reasoning-token guard', () => {
+    it('hides leaked <think> reasoning, shows only the answer', () => {
+      const { container } = render(
+        <MarkdownMessage content={'<think>secret reasoning</think>The visible answer.'} />
+      )
+      expect(container.textContent).toContain('The visible answer.')
+      expect(container.textContent).not.toContain('secret reasoning')
+    })
+  })
+
+  describe('vidviz visualization blocks', () => {
+    it('renders a topic-list block as clickable items that seek', async () => {
+      const seeks = []
+      const content =
+        '```vidviz\n{"type":"topic-list","data":{"items":[{"label":"Intro","timestamp":12}]}}\n```'
+      const { container } = render(
+        <MarkdownMessage content={content} onTimestampClick={(s) => seeks.push(s)} />
+      )
+      const btn = container.querySelector('.vidviz-topic-item')
+      expect(btn).not.toBeNull()
+      expect(btn.textContent).toBe('Intro')
+      btn.click()
+      expect(seeks).toEqual([12])
+    })
+
+    it('falls back gracefully for an unknown viz type without throwing', () => {
+      const content = '```vidviz\n{"type":"does-not-exist","data":{}}\n```'
+      const { container } = render(<MarkdownMessage content={content} />)
+      expect(container.querySelector('.vidviz-error')).not.toBeNull()
+    })
+
+    it('falls back gracefully for invalid JSON', () => {
+      const content = '```vidviz\nnot json\n```'
+      const { container } = render(<MarkdownMessage content={content} />)
+      expect(container.querySelector('.vidviz-error')).not.toBeNull()
+    })
+  })
+
   describe('XSS safety', () => {
     it('does not execute script tags — renders them as escaped text', () => {
       const xssInput = "<script>alert('xss')</script>"

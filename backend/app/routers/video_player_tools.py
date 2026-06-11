@@ -64,4 +64,31 @@ VIDEO_PLAYER_TOOLS = [
             "parameters": {"type": "object", "properties": {}},
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "request_visualization",
+            "description": (
+                "Generate an interactive visual (chart, diagram, timeline, "
+                "comparison, etc.) about the video content when it would "
+                "genuinely help the user understand. A separate specialised "
+                "model builds the visual from the transcript — you only need "
+                "to describe clearly what should be visualized."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "description": {
+                        "type": "string",
+                        "description": (
+                            "What to visualize and why, e.g. 'timeline of the "
+                            "key events discussed' or 'bar chart comparing the "
+                            "approaches mentioned'."
+                        ),
+                    }
+                },
+                "required": ["description"],
+            },
+        },
+    },
 ]

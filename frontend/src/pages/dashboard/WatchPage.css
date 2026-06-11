@@ -353,10 +353,15 @@
   flex: 1;
   overflow-y: auto;
   padding: 20px;
+  scrollbar-width: none;
+}
+
+/* Inner wrapper exists so a ResizeObserver can watch content growth (e.g. a
+   visualization iframe expanding) and keep the scroll pinned to the bottom. */
+.watch-chat-messages-inner {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  scrollbar-width: none;
 }
 
 .watch-chat-messages::-webkit-scrollbar { display: none; }
@@ -399,6 +404,58 @@
   border: 1px solid var(--border);
   color: var(--text);
   border-top-left-radius: 4px;
+}
+
+/* A bubble holding an interactive visualization needs the full panel width —
+   shrink-wrapped, the iframe collapses to its 300px intrinsic width. The
+   loading card gets the same width so the bubble doesn't jump when the
+   artifact arrives. */
+.watch-bubble.assistant:has(.vidviz),
+.watch-bubble.assistant:has(.watch-viz-pending) {
+  width: 100%;
+  max-width: 100%;
+}
+
+/* Card shown while the visualization is generated after the text answer. */
+.watch-viz-pending,
+.watch-viz-failed {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 14px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  font-size: 0.85em;
+  color: var(--text-secondary);
+}
+
+.watch-viz-spinner {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  border: 2px solid rgba(99, 102, 241, 0.3);
+  border-top-color: var(--accent, #6366f1);
+  border-radius: 50%;
+  animation: watchVizSpin 0.8s linear infinite;
+}
+
+@keyframes watchVizSpin {
+  to { transform: rotate(360deg); }
+}
+
+.watch-viz-failed button {
+  background: var(--accent-light, rgba(99, 102, 241, 0.12));
+  color: var(--accent, #6366f1);
+  border: none;
+  border-radius: 6px;
+  padding: 3px 10px;
+  font-size: 0.95em;
+  cursor: pointer;
+}
+
+.watch-viz-failed button:hover {
+  background: rgba(99, 102, 241, 0.25);
 }
 
 .watch-bubble.user {

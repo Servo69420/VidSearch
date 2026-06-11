@@ -1,9 +1,10 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { ALL_VIDEOS } from '../../data/data'
 import { useHistory } from '../../contexts/HistoryContext'
 import { useAuth } from '../../contexts/AuthContext'
 import { useUserVideos } from '../../contexts/UserVideosContext'
 import MarkdownMessage from '../../components/MarkdownMessage'
+import { stripVidvizBlocks } from '../../components/messageFormat'
 import './WatchPage.css'
 
 function parseYouTubeId(url) {
@@ -59,7 +60,7 @@ async function loadHistoryFromAPI(videoId) {
   })
   if (!res.ok) return null
   const rows = await res.json()
-  return rows.map(r => ({ role: r.role, text: r.content }))
+  return rows.map(r => ({ id: r.id, role: r.role, text: r.content }))
 }
 
 async function sendMessageToAPI(videoId, messages, frameBase64, currentTimeS, txtContext) {
@@ -85,11 +86,39 @@ async function sendMessageToAPI(videoId, messages, frameBase64, currentTimeS, tx
   const data = await res.json()
   const msg = data.choices[0].message
 
-  // Return both text content and any tool calls
+  // Return the text content, any tool calls, and — when the model asked for
+  // a visualization — the request the frontend must follow up on.
   return {
     text: msg.content || '',
     toolCalls: msg.tool_calls || [],
+    vizRequest: data.viz_request || null,
+    messageId: data.message_id || null,
   }
+}
+
+// Second phase of a viz-requesting chat turn: the text answer is already on
+// screen, this fetches the artifact (also used by the Regenerate button).
+async function fetchVisualizationBlock(videoId, description, messageId) {
+  const res = await fetch(`${API_BASE}/chat/visualization`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${localStorage.getItem('auth_token')}`,
+    },
+    body: JSON.stringify({
+      video_id: videoId,
+      description,
+      ...(messageId ? { message_id: messageId } : {}),
+    }),
+  })
+  if (!res.ok) {
+    throw new Error(`API error: ${res.status}`)
+  }
+  const data = await res.json()
+  if (typeof data.block !== 'string') {
+    throw new Error('Bad visualization response')
+  }
+  return data.block
 }
 
 // Load YouTube IFrame API script once
@@ -242,6 +271,10 @@ export default function WatchPage({ params }) {
 
   const messagesEndRef = useRef(null)
   const messagesContainerRef = useRef(null)
+  const messagesInnerRef = useRef(null)
+  // True while the user is at (or near) the bottom of the chat — late content
+  // growth only re-pins the scroll when this holds.
+  const messagesPinnedRef = useRef(true)
   const inputRef = useRef(null)
   const fileInputRef = useRef(null)
   const txtInputRef = useRef(null)
@@ -306,7 +339,10 @@ export default function WatchPage({ params }) {
     const vid = uploadedVideoId || videoId
     if (!vid) return
     try {
-      localStorage.setItem(chatKey(user?.id, vid), JSON.stringify(messages))
+      // Drop transient viz loading/failed state — JSON.stringify omits
+      // undefined keys. The finished artifact is persisted server-side.
+      const storable = messages.map(m => (m.viz ? { ...m, viz: undefined } : m))
+      localStorage.setItem(chatKey(user?.id, vid), JSON.stringify(storable))
     } catch {
       // Ignore storage write failures.
     }
@@ -443,7 +479,30 @@ export default function WatchPage({ params }) {
   useEffect(() => {
     const container = messagesContainerRef.current
     if (container) container.scrollTop = container.scrollHeight
+    messagesPinnedRef.current = true
   }, [messages, isLoading])
+
+  // Late-growing content (visualization iframes reporting their height, KaTeX,
+  // images) expands after the scroll effect above has already run. Re-pin to
+  // the bottom whenever the message list grows, unless the user scrolled up.
+  useEffect(() => {
+    const container = messagesContainerRef.current
+    const inner = messagesInnerRef.current
+    if (!container || !inner) return
+    const onScroll = () => {
+      messagesPinnedRef.current =
+        container.scrollHeight - container.scrollTop - container.clientHeight < 60
+    }
+    container.addEventListener('scroll', onScroll, { passive: true })
+    const observer = new ResizeObserver(() => {
+      if (messagesPinnedRef.current) container.scrollTop = container.scrollHeight
+    })
+    observer.observe(inner)
+    return () => {
+      container.removeEventListener('scroll', onScroll)
+      observer.disconnect()
+    }
+  }, [])
 
   function exitTheater() {
     setTheaterExiting(true)
@@ -509,15 +568,60 @@ export default function WatchPage({ params }) {
     return document.querySelector('video.watch-embed')
   }
 
-  function seekTo(seconds) {
+  // Stable identity so the memo on MarkdownMessage holds — otherwise every
+  // WatchPage render (each keystroke) re-parses the whole chat history.
+  const seekTo = useCallback((seconds) => {
     if (localVideoUrl) {
-      const el = getLocalVideoEl()
+      const el = document.querySelector('video.watch-embed')
       if (el) { el.currentTime = seconds; el.play() }
     } else if (ytReadyRef.current) {
       ytPlayerRef.current?.seekTo(seconds, true)
       ytPlayerRef.current?.playVideo()
     }
-  }
+  }, [localVideoUrl])
+
+  // Ref mirrors so the stable viz callbacks below never read stale state.
+  const messagesStateRef = useRef([])
+  useEffect(() => { messagesStateRef.current = messages }, [messages])
+  const activeVideoIdRef = useRef(null)
+  useEffect(() => { activeVideoIdRef.current = activeVideoId }, [activeVideoId])
+
+  // Phase two of a viz-requesting turn: the text answer is already on screen
+  // with a loading card; fetch the artifact and embed it in the message text
+  // (or flip the card to its failed state so the user can retry).
+  const requestVisualization = useCallback(async (description, messageId) => {
+    const applyTo = (updater) => setMessages(prev => prev.map(m => (
+      m.role === 'assistant'
+        && m.viz?.status === 'loading'
+        && m.viz.description === description
+        ? updater(m)
+        : m
+    )))
+    try {
+      const block = await fetchVisualizationBlock(
+        activeVideoIdRef.current, description, messageId
+      )
+      applyTo(m => ({
+        ...m,
+        text: `${stripVidvizBlocks(m.text)}\n\n${block}`.trim(),
+        viz: undefined,
+      }))
+    } catch {
+      applyTo(m => ({ ...m, viz: { status: 'failed', description } }))
+    }
+  }, [])
+
+  // Stable identity: reaches VizBlock through the memoized MarkdownMessage.
+  const handleVizRegenerate = useCallback((messageIndex, description) => {
+    const target = messagesStateRef.current[messageIndex]
+    if (!target || target.viz?.status === 'loading') return
+    setMessages(prev => prev.map((m, i) => (
+      i === messageIndex
+        ? { ...m, text: stripVidvizBlocks(m.text), viz: { status: 'loading', description } }
+        : m
+    )))
+    requestVisualization(description, target.id)
+  }, [requestVisualization])
 
   function executeToolCalls(toolCalls) {
     const yt = ytReadyRef.current ? ytPlayerRef.current : null
@@ -628,7 +732,7 @@ export default function WatchPage({ params }) {
       : (ytReadyRef.current ? (ytPlayerRef.current?.getCurrentTime() ?? null) : null)
 
     try {
-      const { text, toolCalls } = await sendMessageToAPI(uploadedVideoId || videoId, updatedMessages, frameBase64, currentTimeS, txtContext)
+      const { text, toolCalls, vizRequest, messageId } = await sendMessageToAPI(uploadedVideoId || videoId, updatedMessages, frameBase64, currentTimeS, txtContext)
 
       // Execute any tool calls (play/pause)
       if (toolCalls.length > 0) {
@@ -639,7 +743,20 @@ export default function WatchPage({ params }) {
       const replyText = text
         || toolCalls.map(tc => `*${tc.function.name.replace('_', ' ')}*`).join(', ')
         || 'Done.'
-      setMessages(prev => [...prev, { role: 'assistant', text: replyText }])
+      const assistantMsg = { role: 'assistant', text: replyText }
+      if (messageId) assistantMsg.id = messageId
+      if (vizRequest) {
+        // The text shows immediately; the artifact arrives via a separate
+        // request while the bubble displays a loading card.
+        assistantMsg.viz = {
+          status: 'loading',
+          description: vizRequest.description || '',
+        }
+      }
+      setMessages(prev => [...prev, assistantMsg])
+      if (vizRequest) {
+        requestVisualization(vizRequest.description || '', messageId)
+      }
     } catch {
       setMessages(prev => [...prev, { role: 'assistant', text: 'Sorry, something went wrong. Please try again.' }])
     } finally {
@@ -892,43 +1009,71 @@ export default function WatchPage({ params }) {
         </div>
 
         <div className="watch-chat-messages" ref={messagesContainerRef}>
-          {messages.map((msg, i) => (
-            <div key={i} className={`watch-bubble-row ${msg.role}`}>
-              {msg.role === 'assistant' && <div className="watch-bubble-avatar">AI</div>}
-              <div className={`watch-bubble ${msg.role}`}>
-                {msg.role === 'assistant'
-                  ? <MarkdownMessage content={msg.text} onTimestampClick={seekTo} />
-                  : msg.text.split('\n\n').map((para, j) => <p key={j}>{para}</p>)
-                }
-              </div>
-            </div>
-          ))}
-          {isLoading && (
-            <div className="watch-bubble-row assistant">
-              <div className="watch-bubble-avatar">AI</div>
-              <div className="watch-bubble assistant typing">
-                <span /><span /><span />
-              </div>
-            </div>
-          )}
-          {!isTranscriptionReady && !isLoading && (
-            <div className="watch-bubble-row assistant">
-              <div className="watch-bubble-avatar">AI</div>
-              <div className="watch-bubble assistant watch-transcription-loading">
-                <div className="watch-transcription-spinner" />
-                <div className="watch-transcription-info">
-                  <span className={`watch-transcription-word ${wordFade ? 'visible' : ''}`}>
-                    {TRANSCRIPTION_WORDS[wordIdx]}…
-                  </span>
-                  <span className="watch-transcription-detail">{transcriptionNotice}</span>
-                  {transcriptionElapsed > 0 && (
-                    <span className="watch-transcription-timer">{formatElapsed(transcriptionElapsed)}</span>
-                  )}
+          <div className="watch-chat-messages-inner" ref={messagesInnerRef}>
+            {messages.map((msg, i) => (
+              <div key={i} className={`watch-bubble-row ${msg.role}`}>
+                {msg.role === 'assistant' && <div className="watch-bubble-avatar">AI</div>}
+                <div className={`watch-bubble ${msg.role}`}>
+                  {msg.role === 'assistant'
+                    ? (
+                      <>
+                        <MarkdownMessage
+                          content={msg.text}
+                          onTimestampClick={seekTo}
+                          onVizRegenerate={handleVizRegenerate}
+                          messageIndex={i}
+                        />
+                        {msg.viz?.status === 'loading' && (
+                          <div className="watch-viz-pending">
+                            <span className="watch-viz-spinner" />
+                            Generating visualization…
+                          </div>
+                        )}
+                        {msg.viz?.status === 'failed' && (
+                          <div className="watch-viz-failed">
+                            <span>Visualization failed.</span>
+                            <button
+                              type="button"
+                              onClick={() => handleVizRegenerate(i, msg.viz.description)}
+                            >
+                              Retry
+                            </button>
+                          </div>
+                        )}
+                      </>
+                    )
+                    : msg.text.split('\n\n').map((para, j) => <p key={j}>{para}</p>)
+                  }
                 </div>
               </div>
-            </div>
-          )}
-          <div ref={messagesEndRef} />
+            ))}
+            {isLoading && (
+              <div className="watch-bubble-row assistant">
+                <div className="watch-bubble-avatar">AI</div>
+                <div className="watch-bubble assistant typing">
+                  <span /><span /><span />
+                </div>
+              </div>
+            )}
+            {!isTranscriptionReady && !isLoading && (
+              <div className="watch-bubble-row assistant">
+                <div className="watch-bubble-avatar">AI</div>
+                <div className="watch-bubble assistant watch-transcription-loading">
+                  <div className="watch-transcription-spinner" />
+                  <div className="watch-transcription-info">
+                    <span className={`watch-transcription-word ${wordFade ? 'visible' : ''}`}>
+                      {TRANSCRIPTION_WORDS[wordIdx]}…
+                    </span>
+                    <span className="watch-transcription-detail">{transcriptionNotice}</span>
+                    {transcriptionElapsed > 0 && (
+                      <span className="watch-transcription-timer">{formatElapsed(transcriptionElapsed)}</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+            <div ref={messagesEndRef} />
+          </div>
         </div>
 
         <div className="watch-chat-input-area">

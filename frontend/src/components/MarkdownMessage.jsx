@@ -4,34 +4,50 @@ import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
 import rehypeKatex from 'rehype-katex'
 import 'katex/dist/katex.min.css'
+import { stripReasoningTokens, normalizeMathDelimiters, injectTimestampLinks } from './messageFormat'
+import { VizBlock } from './viz/registry'
 import './MarkdownMessage.css'
-
-const TIMESTAMP_RE = /\b(\d{1,2}:\d{2}(?::\d{2})?)\b/g
-
-function timestampToSeconds(ts) {
-  const parts = ts.split(':').map(Number)
-  if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2]
-  return parts[0] * 60 + parts[1]
-}
-
-function injectTimestampLinks(text) {
-  return text.replace(TIMESTAMP_RE, (match) => {
-    const secs = timestampToSeconds(match)
-    return `[${match}](#seek:${secs})`
-  })
-}
 
 // SECURITY: Do NOT add rehype-raw here. It enables raw HTML passthrough which
 // opens XSS vectors. If richer HTML output is ever needed, add rehype-sanitize
 // alongside it. The default config (no rehype plugins) is the safe choice.
-const MarkdownMessage = memo(function MarkdownMessage({ content, onTimestampClick }) {
+const MarkdownMessage = memo(function MarkdownMessage({
+  content,
+  onTimestampClick,
+  onVizRegenerate,
+  messageIndex,
+}) {
   if (!content) return null
 
-  const processed = onTimestampClick ? injectTimestampLinks(content) : content
+  // Order matters: strip control tokens first, normalize math, then links.
+  let processed = stripReasoningTokens(content)
+  processed = normalizeMathDelimiters(processed)
+  if (onTimestampClick) processed = injectTimestampLinks(processed)
+  if (!processed) return null
 
-  const components = onTimestampClick ? {
+  const components = {
+    // Intercept ```vidviz fenced blocks at the <pre> level (avoids invalid
+    // nesting) and dispatch to the viz registry. Everything else falls through.
+    pre({ children, ...props }) {
+      const child = Array.isArray(children) ? children[0] : children
+      const className = child?.props?.className || ''
+      if (/language-vidviz/.test(className)) {
+        return (
+          <VizBlock
+            json={String(child.props.children)}
+            onTimestampClick={onTimestampClick}
+            onRegenerate={
+              onVizRegenerate
+                ? (description) => onVizRegenerate(messageIndex, description)
+                : undefined
+            }
+          />
+        )
+      }
+      return <pre {...props}>{children}</pre>
+    },
     a({ href, children }) {
-      if (href?.startsWith('#seek:')) {
+      if (onTimestampClick && href?.startsWith('#seek:')) {
         const secs = parseInt(href.slice(6), 10)
         return (
           <button
@@ -45,7 +61,7 @@ const MarkdownMessage = memo(function MarkdownMessage({ content, onTimestampClic
       }
       return <a href={href} target="_blank" rel="noopener noreferrer">{children}</a>
     },
-  } : undefined
+  }
 
   return (
     <div className="markdown-message">

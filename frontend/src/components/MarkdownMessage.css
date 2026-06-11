@@ -106,3 +106,163 @@
   background: rgba(99, 102, 241, 0.28);
   color: #c7d2fe;
 }
+
+/* --- Interactive visualization blocks (vidviz seam) --- */
+.vidviz { margin: 0.5em 0; }
+.vidviz-error { color: var(--error, #b91c1c); font-size: 0.85em; }
+
+.vidviz-topic-list {
+  list-style: none;
+  margin: 0.4em 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.vidviz-topic-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: var(--accent-light);
+  color: var(--accent);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  font-size: 0.9em;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+
+.vidviz-topic-item:hover {
+  background: rgba(99, 102, 241, 0.2);
+  border-color: var(--accent);
+}
+
+[data-theme="dark"] .vidviz-topic-item {
+  background: rgba(99, 102, 241, 0.18);
+  color: #a5b4fc;
+}
+
+/* LLM-generated interactive artifact rendered in a sandboxed iframe. */
+.vidviz-artifact-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  background: #161622;
+  border: 1px solid var(--border, rgba(0, 0, 0, 0.12));
+  border-bottom: none;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+}
+
+.vidviz-artifact-title {
+  font-size: 0.8em;
+  color: #a5b4fc;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vidviz-artifact-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* ChatGPT-branch-style switcher between artifact versions: ‹ 1/2 › */
+.vidviz-version-nav {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.vidviz-version-btn {
+  background: transparent;
+  border: none;
+  color: #a5b4fc;
+  font-size: 1.05em;
+  line-height: 1;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.vidviz-version-btn:hover:not(:disabled) {
+  background: rgba(99, 102, 241, 0.25);
+}
+
+.vidviz-version-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.vidviz-version-count {
+  font-size: 0.75em;
+  color: #8b92a8;
+  font-variant-numeric: tabular-nums;
+  min-width: 26px;
+  text-align: center;
+}
+
+.vidviz-regen-btn {
+  flex-shrink: 0;
+  background: rgba(99, 102, 241, 0.18);
+  color: #a5b4fc;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 3px 10px;
+  font-size: 0.78em;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.vidviz-regen-btn:hover {
+  background: rgba(99, 102, 241, 0.32);
+}
+
+.vidviz-artifact-body {
+  position: relative;
+}
+
+/* No max-height: the frame expands to the artifact's full content height so
+   it never scrolls inside itself — the chat panel does the scrolling. */
+.vidviz-artifact-frame {
+  width: 100%;
+  border: 1px solid var(--border, rgba(0, 0, 0, 0.12));
+  border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+  background: #0b0b12;
+  display: block;
+}
+
+/* Placeholder shown until the artifact reports its first height. */
+.vidviz-artifact-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: #0b0b12;
+  border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+  color: #a5b4fc;
+  font-size: 0.85em;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.vidviz-artifact-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(165, 180, 252, 0.3);
+  border-top-color: #a5b4fc;
+  border-radius: 50%;
+  animation: vidvizSpin 0.8s linear infinite;
+}
+
+@keyframes vidvizSpin {
+  to { transform: rotate(360deg); }
+}

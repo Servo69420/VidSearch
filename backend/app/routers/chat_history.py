@@ -176,7 +176,7 @@ async def get_chat_history(
     yt_ref = normalize_youtube_ref(video_id)
     if yt_ref:
         rows = await db.fetch(
-            f"""SELECT ch.role, ch.content
+            f"""SELECT ch.id, ch.role, ch.content
                 FROM chat_history ch
                 JOIN yt_videos yv ON yv.id = ch.video_id
                 WHERE ch.user_id = $1::uuid
@@ -187,7 +187,7 @@ async def get_chat_history(
         )
     elif is_uuid(video_id):
         rows = await db.fetch(
-            """SELECT role, content FROM chat_history
+            """SELECT id, role, content FROM chat_history
                WHERE user_id = $1::uuid
                  AND (video_id = $2::uuid OR user_video_id = $2::uuid)
                ORDER BY created_at ASC""",
@@ -196,4 +196,8 @@ async def get_chat_history(
     else:
         rows = []
 
-    return [{"role": r["role"], "content": r["content"]} for r in rows]
+    # id lets the frontend target a message when (re)generating an artifact.
+    return [
+        {"id": str(r["id"]), "role": r["role"], "content": r["content"]}
+        for r in rows
+    ]

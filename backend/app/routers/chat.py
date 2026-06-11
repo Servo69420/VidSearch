@@ -4,24 +4,32 @@ import re
 import httpx
 import uuid as _uuid
 from pydantic import BaseModel
-from app.config import settings
 from fastapi import APIRouter, HTTPException, Depends
 from app.dependencies import get_current_user
 from app.database import get_db
 from app.routers.context import get_transcript, search_video_context, fetch_chunks_at_time
-from app.routers.video_player_tools import VIDEO_PLAYER_TOOLS
 from app.youtube import normalize_youtube_ref, resolve_or_create_yt_video
 from app.model_config import MODEL_CONFIG
+from app.openrouter_client import (
+    _call_openrouter,
+    _format_seconds,
+    _grounding_message,
+    _strip_reasoning_tokens,
+)
+from app.visualization import (
+    VisualizationGenerator,
+    build_visualization_block,
+    extract_visualization_versions,
+)
 
 
-CHAT_MODEL = MODEL_CONFIG.chat_model
 VISION_MODEL = MODEL_CONFIG.vision_model
 EMBEDDING_MODEL = MODEL_CONFIG.embedding_model
 PHASE2_SUMMARY_MODEL = MODEL_CONFIG.phase2_summary_model
 RETRIEVAL_TOP_K = MODEL_CONFIG.rag_retrieval_top_k
 
-OPENROUTER_CHAT_ENDPOINT = "https://openrouter.ai/api/v1/chat/completions"
-OPENROUTER_TIMEOUT_S = 60.0
+VIZ_TOOL_NAME = "request_visualization"
+VIZ_RETRIEVAL_TOP_K = 12
 
 SYSTEM_PROMPT = (
     "You are a helpful assistant that answers questions about the content "
@@ -45,6 +53,11 @@ SYSTEM_PROMPT = (
     "incorporate it in your answer if relevant and if you understand the image content. "
     "The end user might also attach a text file — its full content will appear in a system message. "
     "Read and analyse the text file content carefully and use it to answer the user's question. "
+    "When a visual (timeline, chart, diagram, comparison) would genuinely help "
+    "the user understand the video content, call the request_visualization tool "
+    "with a clear description of what to visualize — a separate specialised "
+    "model will build an interactive visual from the transcript. Still always "
+    "provide your natural-language answer in the content field as well. "
 )
 
 
@@ -66,67 +79,6 @@ def is_uuid(val: str) -> bool:
         return True
     except (ValueError, AttributeError):
         return False
-
-
-def _format_seconds(seconds: float) -> str:
-    total_seconds = max(int(seconds), 0)
-    minutes, secs = divmod(total_seconds, 60)
-    hours, minutes = divmod(minutes, 60)
-    if hours:
-        return f"{hours}:{minutes:02d}:{secs:02d}"
-    return f"{minutes}:{secs:02d}"
-
-
-def _grounding_message(chunks: list[dict]) -> str:
-    lines = [
-        "Grounding context from retrieved transcript chunks:",
-        "Use this context first when answering video-content questions.",
-        "Prefer timestamps that appear below when calling seek_video.",
-    ]
-    last_topic: str | None = None
-    for chunk in chunks:
-        topic_summary = chunk.get("topic_summary")
-        if topic_summary and topic_summary != last_topic:
-            lines.append(f"Topic: {topic_summary}")
-            last_topic = topic_summary
-        lines.append(
-            f"[{_format_seconds(chunk['start_s'])} - "
-            f"{_format_seconds(chunk['end_s'])}] {chunk['text']}"
-        )
-    return "\n".join(lines)
-
-
-async def _call_openrouter(
-    messages: list[dict],
-    *,
-    tool_choice: str = "auto",
-    model: str | None = None,
-) -> dict:
-    body: dict = {
-        "model": model or CHAT_MODEL,
-        "messages": messages,
-    }
-    if tool_choice != "none":
-        body["tools"] = VIDEO_PLAYER_TOOLS
-        body["tool_choice"] = tool_choice
-    async with httpx.AsyncClient() as client:
-        result = await client.post(
-            OPENROUTER_CHAT_ENDPOINT,
-            headers={
-                "Authorization": f"Bearer {settings.OPENROUTER_API_KEY}",
-                "content-type": "application/json",
-            },
-            json=body,
-            timeout=OPENROUTER_TIMEOUT_S,
-        )
-    if result.status_code != 200:
-        logger.error(
-            "OpenRouter returned status %s body=%s",
-            result.status_code,
-            result.text,
-        )
-        raise HTTPException(status_code=502, detail="Error from AI provider.")
-    return result.json()
 
 
 _TOOLCALL_LITERAL_RE = re.compile(
@@ -177,16 +129,34 @@ def _parse_gemma_tool_calls(text: str) -> tuple[str, list[dict]]:
 def _strip_tool_call_literals(text: str) -> str:
     if not text:
         return text
-    cleaned = _TOOLCALL_LITERAL_RE.sub("", text)
+    cleaned = _strip_reasoning_tokens(text)
+    cleaned = _TOOLCALL_LITERAL_RE.sub("", cleaned)
     cleaned = _TOOLCALL_JSON_RE.sub("", cleaned)
     cleaned, _ = _parse_gemma_tool_calls(cleaned)
     return cleaned.strip()
 
 
+# Fenced ```vidviz``` blocks are UI artifacts injected into assistant content.
+# They must be stripped before assistant turns are sent back to the model on
+# later turns (otherwise multi-KB artifact HTML bloats and confuses context).
+_VIDVIZ_BLOCK_RE = re.compile(r"\n*```vidviz\b[\s\S]*?```\s*", re.IGNORECASE)
+
+
+def _strip_vidviz_blocks(text: str) -> str:
+    if not text:
+        return text
+    return _VIDVIZ_BLOCK_RE.sub("", text).strip()
+
+
 def _tool_call_fallback_text(tool_calls: list[dict]) -> str:
-    return ", ".join(
-        f"*{tc['function']['name'].replace('_', ' ')}*" for tc in tool_calls
-    )
+    # request_visualization never reaches the player; its artifact is rendered
+    # from content, so exclude it from the player-action fallback text.
+    names = [
+        tc["function"]["name"]
+        for tc in tool_calls
+        if tc["function"]["name"] != VIZ_TOOL_NAME
+    ]
+    return ", ".join(f"*{name.replace('_', ' ')}*" for name in names)
 
 
 def _build_followup_turns(tool_calls: list[dict], round1_content: str) -> list[dict]:
@@ -246,12 +216,117 @@ async def _run_chat_loop(
                 "Follow-up OpenRouter call failed; keeping round-1 content"
             )
 
+    # Capture the raw, pre-clean content so any newly-leaked reasoning-token
+    # surface form can be inspected and the strip patterns extended.
+    logger.debug("Chat raw pre-clean content: %r", final_content)
     final_content = _strip_tool_call_literals(final_content)
 
     if not final_content and final_tool_calls:
         final_content = _tool_call_fallback_text(final_tool_calls)
 
     return final_content, final_tool_calls
+
+
+def _extract_viz_description(viz_call: dict) -> str:
+    try:
+        args = json.loads(viz_call["function"].get("arguments") or "{}")
+    except (json.JSONDecodeError, TypeError):
+        return ""
+    if isinstance(args, dict):
+        desc = args.get("description")
+        if isinstance(desc, str):
+            return desc.strip()
+    return ""
+
+
+def _split_viz_request(
+    final_tool_calls: list[dict],
+) -> tuple[str | None, list[dict]]:
+    """Split the model's tool calls into (viz description, player tool calls).
+
+    Returns ``None`` for the description when no visualization was requested.
+    The artifact itself is generated later by the /visualization endpoint so
+    the text answer reaches the user without waiting on a second LLM call.
+    """
+    viz_calls = [
+        tc for tc in final_tool_calls
+        if tc.get("function", {}).get("name") == VIZ_TOOL_NAME
+    ]
+    # Player-only tool calls are the only ones the frontend understands.
+    player_calls = [
+        tc for tc in final_tool_calls
+        if tc.get("function", {}).get("name") != VIZ_TOOL_NAME
+    ]
+    if not viz_calls:
+        return None, player_calls
+    return _extract_viz_description(viz_calls[0]), player_calls
+
+
+async def _resolve_video_ids(
+    raw_video_id: str, user_id: str, db
+) -> tuple[str | None, str | None]:
+    """Resolve a raw video identifier into ``(yt_video_id, user_video_id)``.
+
+    Exactly one of the two is non-None. Raises 404/400 for unknown/invalid
+    identifiers, matching the historical /ask behaviour.
+    """
+    if is_uuid(raw_video_id):
+        user_video_exists = await db.fetchval(
+            """SELECT id
+               FROM user_videos
+               WHERE id = $1::uuid AND user_id = $2::uuid""",
+            raw_video_id,
+            user_id,
+        )
+        if user_video_exists:
+            return None, raw_video_id
+        yt_video_exists = await db.fetchval(
+            "SELECT id FROM yt_videos WHERE id = $1::uuid",
+            raw_video_id,
+        )
+        if not yt_video_exists:
+            raise HTTPException(status_code=404, detail="Video not found")
+        return raw_video_id, None
+
+    yt_ref = normalize_youtube_ref(raw_video_id)
+    if not yt_ref:
+        raise HTTPException(status_code=400, detail="Invalid video identifier")
+    resolved = await resolve_or_create_yt_video(db, yt_ref.video_id)
+    return resolved.yt_video_id, None
+
+
+async def _find_artifact_row(
+    db,
+    *,
+    user_id: str,
+    video_id: str | None,
+    user_video_id: str | None,
+    message_id: str | None,
+):
+    """Locate the assistant message an artifact belongs to.
+
+    Prefers the message the frontend asked for (``message_id``), falling back
+    to the user's latest assistant message for the video.
+    """
+    if message_id and is_uuid(message_id):
+        row = await db.fetchrow(
+            """SELECT id, content FROM chat_history
+               WHERE id = $1::uuid AND user_id = $2::uuid AND role = 'assistant'""",
+            message_id,
+            user_id,
+        )
+        if row is not None:
+            return row
+    return await db.fetchrow(
+        """SELECT id, content FROM chat_history
+           WHERE user_id = $1::uuid
+             AND (video_id = $2::uuid OR user_video_id = $3::uuid)
+             AND role = 'assistant'
+           ORDER BY created_at DESC LIMIT 1""",
+        user_id,
+        video_id,
+        user_video_id,
+    )
 
 
 @router.post("/ask")
@@ -261,34 +336,9 @@ async def ask(
     db=Depends(get_db),
 ):
     user_id = current_user["sub"]
-    if is_uuid(request.video_id):
-        user_video_exists = await db.fetchval(
-            """SELECT id
-               FROM user_videos
-               WHERE id = $1::uuid AND user_id = $2::uuid""",
-            request.video_id,
-            user_id,
-        )
-        if user_video_exists:
-            video_id = None
-            user_video_id = request.video_id
-        else:
-            yt_video_exists = await db.fetchval(
-                "SELECT id FROM yt_videos WHERE id = $1::uuid",
-                request.video_id,
-            )
-            if not yt_video_exists:
-                raise HTTPException(status_code=404, detail="Video not found")
-            video_id = request.video_id
-            user_video_id = None
-    else:
-        yt_ref = normalize_youtube_ref(request.video_id)
-        if not yt_ref:
-            raise HTTPException(status_code=400, detail="Invalid video identifier")
-
-        resolved = await resolve_or_create_yt_video(db, yt_ref.video_id)
-        video_id = resolved.yt_video_id
-        user_video_id = None
+    video_id, user_video_id = await _resolve_video_ids(
+        request.video_id, user_id, db
+    )
 
     transcript = await get_transcript(request.video_id, db)
     if not transcript:
@@ -388,6 +438,12 @@ async def ask(
     for i, msg in enumerate(valid_msgs):
         is_last_user = msg["role"] == "user" and i == len(valid_msgs) - 1
         msg_content = msg["content"]
+        if msg["role"] == "assistant":
+            # Drop any rendered visualization artifact from prior turns — it is
+            # UI markup, not conversation, and would bloat the model context.
+            msg_content = _strip_vidviz_blocks(msg_content)
+            if not msg_content:
+                continue
         if is_last_user and request.txt_context:
             msg_content = (
                 f"<attached_file>\n{request.txt_context}\n</attached_file>\n\n"
@@ -422,6 +478,10 @@ async def ask(
             detail="Request to AI provider timed out.",
         )
 
+    # The artifact is NOT generated here: the text answer returns immediately
+    # and the frontend requests the visualization separately (loading card).
+    viz_description, final_tool_calls = _split_viz_request(final_tool_calls)
+
     envelope = {
         "choices": [
             {
@@ -433,6 +493,8 @@ async def ask(
             }
         ]
     }
+    if viz_description is not None:
+        envelope["viz_request"] = {"description": viz_description}
 
     if user_message:
         await db.execute(
@@ -446,14 +508,104 @@ async def ask(
         )
 
     if final_content:
-        await db.execute(
+        assistant_message_id = await db.fetchval(
             "INSERT INTO chat_history "
             "(user_id, video_id, user_video_id, role, content) "
-            "VALUES ($1::uuid, $2::uuid, $3::uuid, 'assistant', $4)",
+            "VALUES ($1::uuid, $2::uuid, $3::uuid, 'assistant', $4) "
+            "RETURNING id",
             user_id,
             video_id,
             user_video_id,
             final_content,
         )
+        # Lets the frontend tell /visualization which message the artifact
+        # belongs to (for persistence and regeneration).
+        envelope["message_id"] = str(assistant_message_id)
 
     return envelope
+
+
+class VizGenerateRequest(BaseModel):
+    video_id: str
+    description: str = ""
+    message_id: str | None = None
+
+
+@router.post("/visualization")
+async def generate_visualization(
+    request: VizGenerateRequest,
+    current_user=Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """Generate (or regenerate) the visualization artifact for a chat message.
+
+    Called by the frontend after /ask returned a ``viz_request``, and again
+    whenever the user hits the Regenerate button on an artifact.
+    """
+    user_id = current_user["sub"]
+    video_id, user_video_id = await _resolve_video_ids(
+        request.video_id, user_id, db
+    )
+
+    transcript = await get_transcript(request.video_id, db)
+    if not transcript or transcript.get("status") != "ready":
+        raise HTTPException(
+            status_code=409,
+            detail="Transcription is not ready yet.",
+        )
+
+    context_chunks: list[dict] = []
+    if request.description:
+        try:
+            context_chunks = await search_video_context(
+                request.video_id,
+                request.description,
+                db,
+                embed_model=EMBEDDING_MODEL,
+                top_k=VIZ_RETRIEVAL_TOP_K,
+            )
+        except Exception:
+            logger.exception(
+                "Viz focused retrieval failed; generating without context"
+            )
+
+    html = await VisualizationGenerator().generate(
+        request.description, context_chunks
+    )
+    if not html:
+        raise HTTPException(
+            status_code=502, detail="Visualization generation failed."
+        )
+
+    title = request.description[:80] or "Visualization"
+
+    # A regeneration keeps the older artifact versions so the user can flip
+    # back with the version arrows; the DB row still holds the previous block
+    # even though the frontend already swapped it for a loading card.
+    row = await _find_artifact_row(
+        db,
+        user_id=user_id,
+        video_id=video_id,
+        user_video_id=user_video_id,
+        message_id=request.message_id,
+    )
+    previous_versions = (
+        extract_visualization_versions(row["content"]) if row else []
+    )
+    block = build_visualization_block(
+        html,
+        title=title,
+        description=request.description,
+        previous_versions=previous_versions,
+    )
+
+    if row is not None:
+        content = _strip_vidviz_blocks(row["content"])
+        content = f"{content}\n\n{block}".strip() if content else block
+        await db.execute(
+            "UPDATE chat_history SET content = $1 WHERE id = $2::uuid",
+            content,
+            row["id"],
+        )
+
+    return {"block": block}
