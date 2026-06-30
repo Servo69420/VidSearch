@@ -1,25 +1,14 @@
 # VidSearch
 
-Barebones video transcription and RAG chat app. Paste a YouTube URL or upload a video, wait for transcription/indexing, then ask contextual questions about the video.
+Barebones video transcription and RAG chat app. Paste a YouTube URL or upload a video, wait for transcription/indexing, then ask contextual questions about the video. The system also lets the LLM control the video player through function calls. This was the foundation that <img src="logo.png" alt="LentaI" width="18" style="vertical-align: middle;" /> was later built upon.
 
-**Stack:** React + Vite frontend, FastAPI backend, PostgreSQL 16 + pgvector, OpenAI Whisper, OpenRouter, FFmpeg.
+**Stack:** React + Vite frontend, FastAPI backend, PostgreSQL 16 + pgvector, OpenRouter.
 
 ## Prerequisites
 
 - Node.js 18+
 - Python 3.11+
 - Docker, or PostgreSQL 16 with pgvector installed
-- FFmpeg for uploaded video audio extraction
-
-## Database
-
-```bash
-docker compose up -d
-```
-
-PostgreSQL is available at `localhost:5432`. The schema in `backend/schema.sql` is applied automatically only when Docker creates a fresh `pgdata` volume.
-
-For an existing Docker volume, backend startup runs lightweight migrations that remove old account/session tables and keep the video/RAG tables compatible.
 
 ## Backend
 
@@ -30,6 +19,8 @@ DATABASE_URL=postgresql://postgres:postgres@localhost:5432/vidsearch
 OPENROUTER_API_KEY=your-openrouter-key
 OPENAI_API_KEY=your-openai-key
 ```
+OPENAI_API_KEY is optional
+
 
 Then run:
 
