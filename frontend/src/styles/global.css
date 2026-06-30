@@ -93,6 +93,14 @@ p { color: var(--text-secondary); }
   flex: 1;
 }
 
+.app-barebones {
+  --navbar-h: 0px;
+}
+
+.barebones-main {
+  min-height: 100vh;
+}
+
 /* Scrollbar */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }

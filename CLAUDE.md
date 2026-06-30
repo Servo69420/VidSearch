@@ -7,11 +7,10 @@ Users can upload videos or paste YouTube URLs to get transcriptions, then chat w
 ## Stack
 - **Backend**: Python + FastAPI (async), asyncpg, PostgreSQL + pgvector
 - **Frontend**: React + Vite (SPA)
-- **Auth**: JWT (PyJWT) + bcrypt
 - **Transcription**: OpenAI Whisper (uploads), YouTube Transcript API (YT links)
 - **AI Chat**: OpenRouter API
 - **Audio extraction**: FFmpeg
-- **Containerisation**: Docker Compose (db + pgadmin)
+- **Containerisation**: Docker Compose (PostgreSQL + pgvector)
 
 ## Repo Structure
 ```
@@ -20,7 +19,7 @@ VidSearch/
 │   ├── main.py               # FastAPI app, middleware, lifespan, router registration
 │   ├── requirements.txt
 │   ├── schema.sql            # PostgreSQL schema (auto-applied by Docker)
-│   ├── uploads/              # Runtime file storage (videos, avatars)
+│   ├── uploads/              # Runtime file storage (videos)
 │   └── app/
 │       ├── config.py         # Pydantic Settings (env vars)
 │       ├── database.py       # asyncpg connection pool, get_db dependency
@@ -28,12 +27,11 @@ VidSearch/
 │       ├── video_to_audio.py # FFmpeg wrapper
 │       ├── file_input.py     # Generic file upload router
 │       └── routers/
-│           ├── auth.py       # Register, login, profile, avatar
 │           ├── chat.py       # AI chat with video context
 │           └── transcription.py  # Transcription HTTP endpoints
 ├── frontend/
 │   └── src/                  # React components, pages, contexts
-└── docker-compose.yml        # PostgreSQL (pgvector/pg16) + pgAdmin
+└── docker-compose.yml        # PostgreSQL (pgvector/pg16)
 ```
 
 ## Running the Project
@@ -42,7 +40,7 @@ VidSearch/
 ```bash
 docker compose up -d
 ```
-PostgreSQL available at `localhost:5432`, pgAdmin at `http://localhost:5050`.
+PostgreSQL available at `localhost:5432`.
 
 ### Backend
 ```bash
@@ -66,13 +64,13 @@ App at `http://localhost:5173`.
 ## Environment Variables
 Backend reads from a `.env` file (not committed). Expected keys include:
 - `DATABASE_URL` — asyncpg connection string
-- `JWT_SECRET`
 - `OPENROUTER_API_KEY`
+- `OPENAI_API_KEY`
 
 ## Database
 - Engine: PostgreSQL 16 + pgvector extension
 - Schema auto-applied from `backend/schema.sql` on first Docker run
-- Key tables: `users`, `yt_videos`, `user_videos`, `transcriptions`, `chat_history`
+- Key tables: `yt_videos`, `user_videos`, `transcriptions`, `transcript_chunks`, `chat_history`
 - `transcriptions` stores segments as JSONB
 
 ## Coursework Requirements (OOP Coursework 2026)

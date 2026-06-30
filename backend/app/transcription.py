@@ -234,6 +234,16 @@ async def transcribe_uploaded_video(
                 user_video_id, cached["full_text"], cached["segments"],
                 cached["language"], cached["model_version"],
             )
+            await _run_rag_pipeline(
+                db,
+                str(row["id"]),
+                MODEL_CONFIG.embedding_model,
+                MODEL_CONFIG.phase2_summary_model,
+            )
+            row = await db.fetchrow(
+                "SELECT * FROM transcriptions WHERE id = $1::uuid",
+                row["id"],
+            )
             return dict(row)
 
     transcriber = TranscriberFactory.get_transcriber(video_path)

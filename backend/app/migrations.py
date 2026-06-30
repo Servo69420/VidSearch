@@ -1,10 +1,27 @@
 import logging
 
-import bcrypt
-
 from app.embedder import DEFAULT_EMBEDDING_DIMENSIONS
 
 logger = logging.getLogger(__name__)
+
+
+async def ensure_barebones_schema(db) -> None:
+    """Remove obsolete account/session database objects from existing volumes."""
+    await db.execute(
+        """
+        ALTER TABLE IF EXISTS user_videos
+            DROP CONSTRAINT IF EXISTS user_videos_user_id_fkey;
+        ALTER TABLE IF EXISTS chat_history
+            DROP CONSTRAINT IF EXISTS chat_history_user_id_fkey;
+        ALTER TABLE IF EXISTS user_videos
+            DROP COLUMN IF EXISTS user_id;
+        ALTER TABLE IF EXISTS chat_history
+            DROP COLUMN IF EXISTS user_id;
+        DROP TABLE IF EXISTS token_blacklist CASCADE;
+        DROP TABLE IF EXISTS user_hobbies CASCADE;
+        DROP TABLE IF EXISTS users CASCADE;
+        """
+    )
 
 
 async def ensure_embedding_dimensions(db) -> None:
@@ -54,23 +71,3 @@ async def ensure_embedding_dimensions(db) -> None:
         """
     )
 
-
-async def ensure_admin_setup(db) -> None:
-    """Add is_admin column and create the default admin account."""
-    await db.execute(
-        "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN DEFAULT FALSE"
-    )
-
-    exists = await db.fetchval("SELECT 1 FROM users WHERE username = 'admin'")
-    if not exists:
-        hashed = bcrypt.hashpw(b"admin", bcrypt.gensalt()).decode()
-        await db.execute(
-            "INSERT INTO users (username, password_hash, is_admin) "
-            "VALUES ('admin', $1, TRUE)",
-            hashed,
-        )
-        logger.info("Admin account created (username=admin, default password=admin)")
-    else:
-        await db.execute(
-            "UPDATE users SET is_admin = TRUE WHERE username = 'admin' AND is_admin = FALSE"
-        )

@@ -1,6 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
 from app.database import get_db
-from app.dependencies import get_current_user
 from app.youtube import YOUTUBE_ID_SQL_EXPR, normalize_youtube_ref
 import uuid as _uuid
 
@@ -9,7 +8,6 @@ router = APIRouter()
 
 @router.get("/all")
 async def get_all_history(
-    current_user=Depends(get_current_user),
     db=Depends(get_db),
 ):
     rows = await db.fetch(
@@ -30,9 +28,8 @@ async def get_all_history(
            FROM chat_history ch
            LEFT JOIN yt_videos yv ON ch.video_id = yv.id
            LEFT JOIN user_videos uv ON ch.user_video_id = uv.id
-           WHERE ch.user_id = $1::uuid AND ch.role = 'user'
+           WHERE ch.role = 'user'
            ORDER BY ch.created_at DESC""",
-        current_user["sub"],
     )
     return [
         {
@@ -51,7 +48,6 @@ async def get_all_history(
 
 @router.get("/videos")
 async def get_history_videos(
-    current_user=Depends(get_current_user),
     db=Depends(get_db),
 ):
     from pathlib import Path as PyPath
@@ -74,11 +70,9 @@ async def get_history_videos(
            FROM chat_history ch
            LEFT JOIN yt_videos yv ON ch.video_id = yv.id
            LEFT JOIN user_videos uv ON ch.user_video_id = uv.id
-           WHERE ch.user_id = $1::uuid
            GROUP BY ch.video_id, ch.user_video_id,
-                    yv.title, yv.source_url, uv.file_name, uv.file_path
+                     yv.title, yv.source_url, uv.file_name, uv.file_path
            ORDER BY last_message_at DESC""",
-        current_user["sub"],
     )
     result = []
     for r in rows:
@@ -100,31 +94,24 @@ async def get_history_videos(
 
 @router.delete("/all")
 async def clear_all_history(
-    current_user=Depends(get_current_user),
     db=Depends(get_db),
 ):
-    await db.execute(
-        "DELETE FROM chat_history WHERE user_id = $1::uuid",
-        current_user["sub"],
-    )
+    await db.execute("DELETE FROM chat_history")
     return {"deleted": True}
 
 
 @router.delete("/video/{video_id}")
 async def delete_video_history(
     video_id: str,
-    current_user=Depends(get_current_user),
     db=Depends(get_db),
 ):
     yt_ref = normalize_youtube_ref(video_id)
     if yt_ref:
         await db.execute(
             f"""DELETE FROM chat_history
-                WHERE user_id = $1::uuid
-                AND video_id IN (
-                    SELECT id FROM yt_videos WHERE {YOUTUBE_ID_SQL_EXPR} = $2
+                WHERE video_id IN (
+                    SELECT id FROM yt_videos WHERE {YOUTUBE_ID_SQL_EXPR} = $1
                 )""",
-            current_user["sub"],
             yt_ref.video_id,
         )
         return {"deleted": True}
@@ -142,19 +129,15 @@ async def delete_video_history(
     if yt_row and yt_row["yt_video_id"]:
         await db.execute(
             f"""DELETE FROM chat_history
-                WHERE user_id = $1::uuid
-                AND video_id IN (
-                    SELECT id FROM yt_videos WHERE {YOUTUBE_ID_SQL_EXPR} = $2
+                WHERE video_id IN (
+                    SELECT id FROM yt_videos WHERE {YOUTUBE_ID_SQL_EXPR} = $1
                 )""",
-            current_user["sub"],
             yt_row["yt_video_id"],
         )
     else:
         await db.execute(
             """DELETE FROM chat_history
-               WHERE user_id = $1::uuid
-                 AND (video_id = $2::uuid OR user_video_id = $2::uuid)""",
-            current_user["sub"],
+               WHERE video_id = $1::uuid OR user_video_id = $1::uuid""",
             vid,
         )
     return {"deleted": True}
@@ -163,7 +146,6 @@ async def delete_video_history(
 @router.get("/{video_id}")
 async def get_chat_history(
     video_id: str,
-    current_user=Depends(get_current_user),
     db=Depends(get_db),
 ):
     def is_uuid(val):
@@ -179,19 +161,16 @@ async def get_chat_history(
             f"""SELECT ch.role, ch.content
                 FROM chat_history ch
                 JOIN yt_videos yv ON yv.id = ch.video_id
-                WHERE ch.user_id = $1::uuid
-                  AND {YOUTUBE_ID_SQL_EXPR} = $2
+                WHERE {YOUTUBE_ID_SQL_EXPR} = $1
                 ORDER BY ch.created_at ASC""",
-            current_user["sub"],
             yt_ref.video_id,
         )
     elif is_uuid(video_id):
         rows = await db.fetch(
             """SELECT role, content FROM chat_history
-               WHERE user_id = $1::uuid
-                 AND (video_id = $2::uuid OR user_video_id = $2::uuid)
+               WHERE video_id = $1::uuid OR user_video_id = $1::uuid
                ORDER BY created_at ASC""",
-            current_user["sub"], video_id,
+            video_id,
         )
     else:
         rows = []

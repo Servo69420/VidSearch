@@ -1,7 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { ALL_VIDEOS } from '../../data/data'
 import { useHistory } from '../../contexts/HistoryContext'
-import { useAuth } from '../../contexts/AuthContext'
 import { useUserVideos } from '../../contexts/UserVideosContext'
 import MarkdownMessage from '../../components/MarkdownMessage'
 import './WatchPage.css'
@@ -35,7 +34,7 @@ const WELCOME_MESSAGE = {
   text: 'Hi! Paste a YouTube link above and I\'ll help you understand the video. You can ask me anything about its content.',
 }
 
-const chatKey = (userId, vid) => `watchChat_${userId || 'anonymous'}_${vid}`
+const chatKey = (vid) => `watchChat_barebones_${vid}`
 const legacyChatKey = (vid) => `watchChat_${vid}`
 const API_BASE = 'http://localhost:8000'
 const TRANSCRIPTION_POLL_MS = 2500
@@ -52,11 +51,8 @@ function formatElapsed(seconds) {
 }
 
 async function loadHistoryFromAPI(videoId) {
-  const token = localStorage.getItem('auth_token')
-  if (!token || !videoId) return null
-  const res = await fetch(`${API_BASE}/chat-history/${videoId}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  })
+  if (!videoId) return null
+  const res = await fetch(`${API_BASE}/chat-history/${videoId}`)
   if (!res.ok) return null
   const rows = await res.json()
   return rows.map(r => ({ role: r.role, text: r.content }))
@@ -67,7 +63,6 @@ async function sendMessageToAPI(videoId, messages, frameBase64, currentTimeS, tx
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${localStorage.getItem('auth_token')}`,
     },
     body: JSON.stringify({
       video_id: videoId,
@@ -115,7 +110,6 @@ function loadYouTubeAPI() {
 
 export default function WatchPage({ params }) {
   const { recordVisit, recordChat } = useHistory()
-  const { user } = useAuth()
   const { addUserVideo } = useUserVideos()
   const videoFromParams = params?.id ? ALL_VIDEOS.find(v => v.id === parseInt(params.id)) : null
   const defaultYoutubeId = videoFromParams?.youtubeId || 'aircAruvnKk'
@@ -161,7 +155,7 @@ export default function WatchPage({ params }) {
     window.addEventListener('mouseup', onMouseUp)
   }
 
-  // Read a user video to pre-load (set by Browse/Dashboard when clicking a personal video)
+  // Read a previously opened uploaded or YouTube video from session storage.
   const [pendingVideo] = useState(() => {
     const raw = sessionStorage.getItem('openUserVideo')
     if (raw) {
@@ -179,7 +173,7 @@ export default function WatchPage({ params }) {
 
   function loadChat(vid) {
     try {
-      return JSON.parse(localStorage.getItem(chatKey(user?.id, vid))) ?? [WELCOME_MESSAGE]
+      return JSON.parse(localStorage.getItem(chatKey(vid))) ?? [WELCOME_MESSAGE]
     } catch {
       return [WELCOME_MESSAGE]
     }
@@ -284,7 +278,7 @@ export default function WatchPage({ params }) {
         } else {
           setMessages([WELCOME_MESSAGE])
           try {
-            localStorage.removeItem(chatKey(user?.id, vid))
+            localStorage.removeItem(chatKey(vid))
             localStorage.removeItem(legacyChatKey(vid))
           } catch {
             // Ignore storage cleanup failures.
@@ -292,7 +286,7 @@ export default function WatchPage({ params }) {
         }
       }
     })
-  }, [videoId, uploadedVideoId, user?.id])
+  }, [videoId, uploadedVideoId])
 
   useEffect(() => {
     try {
@@ -306,11 +300,11 @@ export default function WatchPage({ params }) {
     const vid = uploadedVideoId || videoId
     if (!vid) return
     try {
-      localStorage.setItem(chatKey(user?.id, vid), JSON.stringify(messages))
+      localStorage.setItem(chatKey(vid), JSON.stringify(messages))
     } catch {
       // Ignore storage write failures.
     }
-  }, [messages, uploadedVideoId, user?.id, videoId])
+  }, [messages, uploadedVideoId, videoId])
 
   useEffect(() => {
     setTranscriptionStatus(activeVideoId ? 'checking' : 'missing')
@@ -351,8 +345,6 @@ export default function WatchPage({ params }) {
 
   useEffect(() => {
     if (!videoId || localVideoUrl) return
-    const token = localStorage.getItem('auth_token')
-    if (!token) return
 
     const startKey = `youtube:${videoId}`
     if (transcriptionStartedRef.current.has(startKey)) return
@@ -362,7 +354,6 @@ export default function WatchPage({ params }) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify({ url: youtubeWatchUrl(videoId) }),
     }).catch(() => {
@@ -372,20 +363,13 @@ export default function WatchPage({ params }) {
 
   useEffect(() => {
     if (!activeVideoId) return
-    const token = localStorage.getItem('auth_token')
-    if (!token) {
-      setTranscriptionStatus('failed')
-      return
-    }
 
     let cancelled = false
     let timeoutId = null
 
     async function poll() {
       try {
-        const res = await fetch(`${API_BASE}/transcription/status/${encodeURIComponent(activeVideoId)}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        })
+        const res = await fetch(`${API_BASE}/transcription/status/${encodeURIComponent(activeVideoId)}`)
         if (!res.ok) throw new Error(`Status failed: ${res.status}`)
         const data = await res.json()
         if (cancelled) return
@@ -428,11 +412,7 @@ export default function WatchPage({ params }) {
 
   useEffect(() => {
     if (transcriptionStatus !== 'ready' || !activeVideoId) return
-    const token = localStorage.getItem('auth_token')
-    if (!token) return
-    fetch(`${API_BASE}/transcription/segments/${encodeURIComponent(activeVideoId)}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
+    fetch(`${API_BASE}/transcription/segments/${encodeURIComponent(activeVideoId)}`)
       .then(r => r.ok ? r.json() : null)
       .then(data => {
         if (data?.segments?.length) setSegments(data.segments)
@@ -583,13 +563,11 @@ export default function WatchPage({ params }) {
       addUserVideo({ id: `yt_${id}`, type: 'youtube', youtubeId: id, title: 'Video loaded', addedAt: new Date().toISOString() })
 
       // Trigger transcription in the background
-      const token = localStorage.getItem('auth_token')
       transcriptionStartedRef.current.add(`youtube:${id}`)
       fetch(`${API_BASE}/transcription/url`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({ url: urlInput.trim() }),
       }).catch(() => setTranscriptionStatus('failed'))
@@ -669,7 +647,6 @@ export default function WatchPage({ params }) {
     try {
       const res = await fetch(`${API_BASE}/files/upload_video`, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` },
         body: formData,
       })
 
@@ -724,7 +701,6 @@ export default function WatchPage({ params }) {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${localStorage.getItem('auth_token')}`,
         },
         body: JSON.stringify({ video_id: videoId, timestamp }),
       })

@@ -10,7 +10,6 @@ from pathlib import Path
 import uuid
 
 from app.database import get_db
-from app.dependencies import get_current_user
 from app.model_config import MODEL_CONFIG
 from app.routers.context import get_transcript
 from app.transcription import transcribe_video_yt, transcribe_uploaded_video
@@ -91,7 +90,6 @@ class YouTubeTranscriptionRequest(BaseModel):
 @router.get("/status/{video_id:path}")
 async def transcription_status(
     video_id: str,
-    current_user=Depends(get_current_user),
     db=Depends(get_db),
 ):
     transcript = await get_transcript(video_id, db)
@@ -109,7 +107,6 @@ async def transcription_status(
 @router.post("/url")
 async def transcribe_url(
     body: YouTubeTranscriptionRequest,
-    current_user=Depends(get_current_user),
     db=Depends(get_db),
 ):
     try:
@@ -133,7 +130,6 @@ async def transcribe_url(
 @router.post("/upload")
 async def transcribe_upload(
     file: UploadFile = File(...),
-    current_user=Depends(get_current_user),
     db=Depends(get_db),
 ):
     allowed = ("video/mp4", "video/webm", "video/x-matroska", "video/quicktime")
@@ -149,9 +145,9 @@ async def transcribe_upload(
     await asyncio.to_thread(file_path.write_bytes, data)
 
     user_video = await db.fetchrow(
-        "INSERT INTO user_videos (user_id, file_name, file_path) "
-        "VALUES ($1::uuid, $2, $3) RETURNING *",
-        current_user["sub"], file.filename, str(file_path),
+        "INSERT INTO user_videos (file_name, file_path) "
+        "VALUES ($1, $2) RETURNING *",
+        file.filename, str(file_path),
     )
 
     try:
@@ -170,7 +166,6 @@ async def transcribe_upload(
 @router.get("/segments/{video_id:path}")
 async def get_segments(
     video_id: str,
-    current_user=Depends(get_current_user),
     db=Depends(get_db),
 ):
     yt_id = extract_video_id(video_id)

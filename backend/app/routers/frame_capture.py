@@ -7,10 +7,9 @@ import subprocess
 import sys
 import tempfile
 
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from app.dependencies import get_current_user
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -57,7 +56,6 @@ class FrameCaptureRequest(BaseModel):
 @router.post("/capture-frame")
 async def capture_frame(
     request: FrameCaptureRequest,
-    current_user=Depends(get_current_user),
 ):
     if request.timestamp < 0:
         raise HTTPException(status_code=400, detail="Timestamp must be non-negative.")

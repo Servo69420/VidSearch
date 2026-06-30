@@ -6,8 +6,6 @@ import uuid as _uuid
 from pydantic import BaseModel
 from app.config import settings
 from fastapi import APIRouter, HTTPException, Depends
-from app.dependencies import get_current_user
-from app.database import get_db
 from app.routers.context import get_transcript, search_video_context, fetch_chunks_at_time
 from app.routers.video_player_tools import VIDEO_PLAYER_TOOLS
 from app.youtube import normalize_youtube_ref, resolve_or_create_yt_video
@@ -50,6 +48,13 @@ SYSTEM_PROMPT = (
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+async def get_db():
+    from app.database import get_db as database_get_db
+
+    async for connection in database_get_db():
+        yield connection
 
 
 class Chatrequest(BaseModel):
@@ -257,17 +262,14 @@ async def _run_chat_loop(
 @router.post("/ask")
 async def ask(
     request: Chatrequest,
-    current_user=Depends(get_current_user),
     db=Depends(get_db),
 ):
-    user_id = current_user["sub"]
     if is_uuid(request.video_id):
         user_video_exists = await db.fetchval(
             """SELECT id
                FROM user_videos
-               WHERE id = $1::uuid AND user_id = $2::uuid""",
+               WHERE id = $1::uuid""",
             request.video_id,
-            user_id,
         )
         if user_video_exists:
             video_id = None
@@ -437,9 +439,8 @@ async def ask(
     if user_message:
         await db.execute(
             "INSERT INTO chat_history "
-            "(user_id, video_id, user_video_id, role, content) "
-            "VALUES ($1::uuid, $2::uuid, $3::uuid, 'user', $4)",
-            user_id,
+            "(video_id, user_video_id, role, content) "
+            "VALUES ($1::uuid, $2::uuid, 'user', $3)",
             video_id,
             user_video_id,
             user_message,
@@ -448,9 +449,8 @@ async def ask(
     if final_content:
         await db.execute(
             "INSERT INTO chat_history "
-            "(user_id, video_id, user_video_id, role, content) "
-            "VALUES ($1::uuid, $2::uuid, $3::uuid, 'assistant', $4)",
-            user_id,
+            "(video_id, user_video_id, role, content) "
+            "VALUES ($1::uuid, $2::uuid, 'assistant', $3)",
             video_id,
             user_video_id,
             final_content,

@@ -3,7 +3,7 @@ from abc import ABC, abstractmethod
 import asyncpg
 
 from app.config import settings
-from app.migrations import ensure_admin_setup, ensure_embedding_dimensions
+from app.migrations import ensure_barebones_schema, ensure_embedding_dimensions
 
 
 class BaseDatabase(ABC):
@@ -32,8 +32,8 @@ class PostgresDatabase(BaseDatabase):
     async def connect(self) -> None:
         self.__pool = await asyncpg.create_pool(self.__url)
         async with self.__pool.acquire() as connection:
+            await ensure_barebones_schema(connection)
             await ensure_embedding_dimensions(connection)
-            await ensure_admin_setup(connection)
 
     async def disconnect(self) -> None:
         if self.__pool:
