@@ -1,6 +1,6 @@
 # VidSearch
 
-Barebones video transcription and RAG chat app. Paste a YouTube URL or upload a video, wait for transcription/indexing, then ask contextual questions about the video. The system also lets the LLM control the video player through function calls. This was the foundation that <img src="logo.png" alt="LentaI" width="18" style="vertical-align: middle;" /> was later built upon.
+Barebones video transcription and RAG chat app. Paste a YouTube URL or upload a video, wait for transcription/indexing, then ask contextual questions about the video. The system also lets the LLM control the video player through function calls. This was the foundation that <img src="logo.png" alt="LentaI" width="30" style="vertical-align: middle;" /> was later built upon.
 
 **Stack:** React + Vite frontend, FastAPI backend, PostgreSQL 16 + pgvector, OpenRouter.
 
